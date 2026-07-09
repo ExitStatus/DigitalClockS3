@@ -17,65 +17,205 @@ WeatherApi::WeatherApi(const char* apiKey, double lat, double lon, const Weather
 
 void WeatherApi::Begin()
 {
-    // Intervals are armed; the work happens in Update() once WiFi is connected.
+    _lock = xSemaphoreCreateMutex();
+    if (!_lock)
+    {
+        DPRINTLN("WeatherApi: could not create mutex");
+        return;
+    }
+
+    // The intervals are already armed; the worker sleeps until Update() asks
+    // for something.
+    BaseType_t ok = xTaskCreatePinnedToCore(taskEntry, "weather", kTaskStack,
+                                            this, kTaskPriority, &_task, kTaskCore);
+    if (ok != pdPASS)
+    {
+        _task = nullptr;
+        DPRINTLN("WeatherApi: could not create worker task");
+    }
 }
 
+void WeatherApi::taskEntry(void* arg)
+{
+    static_cast<WeatherApi*>(arg)->taskLoop();
+}
+
+// Caller's thread. Returns immediately: it adopts whatever the worker has
+// finished, then asks for anything the refresh intervals have made due.
 void WeatherApi::Update(bool wifiConnected)
 {
+    if (!_task)
+        return;                     // worker never started; nothing can happen
+
+    collect();
+
     if (!wifiConnected)
-        return;                     // no network, nothing to do
+        return;                     // no network, don't bother the worker
 
-    if (_weatherRefresh.Ready())
-        tryWeather();
+    // Ready() re-arms on a true return, so each one that fires must be recorded
+    // now -- it cannot be asked again later.
+    uint8_t request = 0;
+    if (_weatherRefresh.Ready())  request |= ReqWeather;
+    if (_forecastRefresh.Ready()) request |= ReqForecast;
 
-    if (_forecastRefresh.Ready())
-        tryForecast();
+    if (request)
+        dispatch(request);
 }
 
-// Fetch the current weather; on failure retry a few times after a short wait,
-// then fall back to the normal refresh interval. RetryIn() applies only to the
-// next cycle, so calling it again each failure keeps the short cadence going.
-void WeatherApi::tryWeather()
+void WeatherApi::dispatch(uint8_t request)
 {
-    if (fetchWeather())
-    {
-        _weatherRetries = 0;
-        _lastWeatherSuccess = millis();
-    }
-    else if (_weatherRetries < kMaxRetries)
-    {
-        _weatherRetries++;
-        _weatherRefresh.RetryIn(kFetchRetryMs);
-        DPRINTF("WeatherApi: weather fetch failed, retry %d/%d shortly\n", _weatherRetries, kMaxRetries);
-    }
-    else
-    {
-        _weatherRetries = 0;      // give up short retries; resume normal interval
-        DPRINTLN("WeatherApi: weather retries exhausted; waiting for normal interval");
-    }
+    xSemaphoreTake(_lock, portMAX_DELAY);
+    _pending |= request;            // accumulate; a fetch may be in flight
+    xSemaphoreGive(_lock);
+
+    xTaskNotifyGive(_task);
 }
 
-void WeatherApi::tryForecast()
+// Caller's thread. Moves finished results out of the shared slots and applies
+// them to the live fields. This is the only place those fields change, and the
+// only place the previous icon buffer is freed -- both safe here because no
+// render is in progress.
+void WeatherApi::collect()
 {
-    if (fetchForecast())
+    WeatherResult  weather;
+    ForecastResult forecast;
+    uint8_t done;
+
+    xSemaphoreTake(_lock, portMAX_DELAY);
+    done = _done;
+    _done = 0;
+    if (done & ReqWeather)
     {
-        _forecastRetries = 0;
-        _lastForecastSuccess = millis();
+        weather = _weatherResult;
+        _weatherResult = WeatherResult();   // drop our claim on the icon buffer
     }
-    else if (_forecastRetries < kMaxRetries)
+    if (done & ReqForecast)
+        forecast = _forecastResult;
+    xSemaphoreGive(_lock);
+
+    if (done & ReqWeather)  applyWeather(weather);
+    if (done & ReqForecast) applyForecast(forecast);
+}
+
+// On failure retry a few times after a short wait, then fall back to the normal
+// refresh interval. RetryIn() applies only to the next cycle, so calling it
+// again on each failure keeps the short cadence going.
+void WeatherApi::applyWeather(const WeatherResult& r)
+{
+    if (!r.ok)
     {
-        _forecastRetries++;
-        _forecastRefresh.RetryIn(kFetchRetryMs);
-        DPRINTF("WeatherApi: forecast fetch failed, retry %d/%d shortly\n", _forecastRetries, kMaxRetries);
+        if (r.iconPng)
+            free(r.iconPng);        // downloaded, but the fetch failed after it
+
+        if (_weatherRetries < kMaxRetries)
+        {
+            _weatherRetries++;
+            _weatherRefresh.RetryIn(kFetchRetryMs);
+            DPRINTF("WeatherApi: weather fetch failed, retry %d/%d shortly\n", _weatherRetries, kMaxRetries);
+        }
+        else
+        {
+            _weatherRetries = 0;    // give up short retries; resume normal interval
+            DPRINTLN("WeatherApi: weather retries exhausted; waiting for normal interval");
+        }
+        return;
     }
-    else
+
+    _temp = r.temp;
+    _windSpeed = r.windSpeed;
+    _windDegree = r.windDegree;
+    _hasWeather = true;
+    _weatherRetries = 0;
+    _lastWeatherSuccess = millis();
+
+    // Swap in the new icon and release the old one. Nothing is decoding it: the
+    // consumer only reads IconData() after Update() has returned.
+    if (r.iconPng)
     {
-        _forecastRetries = 0;
-        DPRINTLN("WeatherApi: forecast retries exhausted; waiting for normal interval");
+        if (_iconPng)
+            free(_iconPng);
+        _iconPng = r.iconPng;
+        _iconLen = r.iconLen;
+        _iconVersion++;
     }
 }
 
-bool WeatherApi::fetchWeather()
+void WeatherApi::applyForecast(const ForecastResult& r)
+{
+    if (!r.ok)
+    {
+        if (_forecastRetries < kMaxRetries)
+        {
+            _forecastRetries++;
+            _forecastRefresh.RetryIn(kFetchRetryMs);
+            DPRINTF("WeatherApi: forecast fetch failed, retry %d/%d shortly\n", _forecastRetries, kMaxRetries);
+        }
+        else
+        {
+            _forecastRetries = 0;
+            DPRINTLN("WeatherApi: forecast retries exhausted; waiting for normal interval");
+        }
+        return;
+    }
+
+    _today = r.today;
+    _tomorrow = r.tomorrow;
+    _forecastRetries = 0;
+    _lastForecastSuccess = millis();
+}
+
+// Worker thread. Sleeps until asked, then does the blocking HTTP work and parks
+// the result. Loops rather than returning to the notify, so a request that
+// arrived mid-fetch is served without waiting for another notification.
+void WeatherApi::taskLoop()
+{
+    for (;;)
+    {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        for (;;)
+        {
+            uint8_t request;
+
+            xSemaphoreTake(_lock, portMAX_DELAY);
+            request = _pending;
+            _pending = 0;
+            xSemaphoreGive(_lock);
+
+            if (!request)
+                break;              // nothing left to do; go back to sleep
+
+            WeatherResult  weather;
+            ForecastResult forecast;
+
+            if (request & ReqWeather)  weather.ok  = fetchWeather(weather);
+            if (request & ReqForecast) forecast.ok = fetchForecast(forecast);
+
+            xSemaphoreTake(_lock, portMAX_DELAY);
+            if (request & ReqWeather)
+            {
+                // A result the caller never collected still owns its buffer.
+                // Forget the URL too, so the discarded icon is fetched again
+                // rather than skipped as unchanged.
+                if (_weatherResult.iconPng)
+                {
+                    free(_weatherResult.iconPng);
+                    _lastIconUrl = "";
+                }
+                _weatherResult = weather;
+            }
+            if (request & ReqForecast)
+                _forecastResult = forecast;
+            _done |= request;
+            xSemaphoreGive(_lock);
+
+            DPRINTF("WeatherApi: worker stack headroom %u bytes\n",
+                    (unsigned)(uxTaskGetStackHighWaterMark(nullptr) * sizeof(StackType_t)));
+        }
+    }
+}
+
+bool WeatherApi::fetchWeather(WeatherResult& out)
 {
     String url = "https://api.weatherapi.com/v1/current.json?key=" + String(_apiKey) +
                  "&q=" + _lat + "," + _lon;
@@ -115,12 +255,11 @@ bool WeatherApi::fetchWeather()
         return false;
     }
 
-    _temp = field.as<float>();
-    _windSpeed = doc["current"][_fields.wind] | 0.0f;
-    _windDegree = doc["current"]["wind_degree"] | 0;
-    _hasWeather = true;
+    out.temp = field.as<float>();
+    out.windSpeed = doc["current"][_fields.wind] | 0.0f;
+    out.windDegree = doc["current"]["wind_degree"] | 0;
     DPRINTF("WeatherApi: %s = %.1f, wind %.0f (%s) @ %d deg\n",
-            _fields.currentTemp, _temp, _windSpeed, _fields.wind, _windDegree);
+            _fields.currentTemp, out.temp, out.windSpeed, _fields.wind, out.windDegree);
 
     // Download the condition icon PNG if its URL changed. The URL is
     // protocol-relative ("//cdn.weatherapi.com/..."), so prefix https:.
@@ -131,11 +270,12 @@ bool WeatherApi::fetchWeather()
         if (iconUrl.startsWith("//"))
             iconUrl = "https:" + iconUrl;
 
-        if (iconUrl != _lastIconUrl && downloadIcon(iconUrl))
-        {
+        // _lastIconUrl is worker-only state, so it needs no guarding. It is
+        // updated on a successful download even though the caller has yet to
+        // adopt the buffer -- if the caller drops it, the buffer is freed, not
+        // leaked, and the icon is simply re-downloaded on the next change.
+        if (iconUrl != _lastIconUrl && downloadIcon(iconUrl, out.iconPng, out.iconLen))
             _lastIconUrl = iconUrl;
-            _iconVersion++;
-        }
     }
 
     return true;
@@ -184,7 +324,7 @@ static void parseDay(JsonArrayConst hours, DayForecast& out, const WeatherFields
     out.valid = (n > 0);
 }
 
-bool WeatherApi::fetchForecast()
+bool WeatherApi::fetchForecast(ForecastResult& out)
 {
     String url = "https://api.weatherapi.com/v1/forecast.json?key=" + String(_apiKey) +
                  "&q=" + _lat + "," + _lon + "&days=2";
@@ -234,16 +374,18 @@ bool WeatherApi::fetchForecast()
     if (days.size() < 2)
         return false;
 
-    parseDay(days[0]["hour"], _today, _fields);
-    parseDay(days[1]["hour"], _tomorrow, _fields);
+    parseDay(days[0]["hour"], out.today, _fields);
+    parseDay(days[1]["hour"], out.tomorrow, _fields);
 
     DPRINTF("WeatherApi: forecast today %d/%d%%/%d  tomorrow %d/%d%%/%d\n",
-            _today.maxTemp, _today.maxRain, _today.maxWind,
-            _tomorrow.maxTemp, _tomorrow.maxRain, _tomorrow.maxWind);
-    return _today.valid && _tomorrow.valid;
+            out.today.maxTemp, out.today.maxRain, out.today.maxWind,
+            out.tomorrow.maxTemp, out.tomorrow.maxRain, out.tomorrow.maxWind);
+    return out.today.valid && out.tomorrow.valid;
 }
 
-bool WeatherApi::downloadIcon(const String& url)
+// Worker thread. On success `buf` is a fresh malloc'd buffer whose ownership
+// passes to the caller of this function; it is never installed directly.
+bool WeatherApi::downloadIcon(const String& url, uint8_t*& buf, size_t& len)
 {
     DPRINTF("WeatherApi: downloading icon %s\n", url.c_str());
 
@@ -263,16 +405,16 @@ bool WeatherApi::downloadIcon(const String& url)
         return false;
     }
 
-    int len = http.getSize();
-    if (len <= 0 || len > 16384)         // sanity bound; these icons are ~1-2 KB
+    int size = http.getSize();
+    if (size <= 0 || size > 16384)       // sanity bound; these icons are ~1-2 KB
     {
-        DPRINTF("WeatherApi: icon size %d rejected\n", len);
+        DPRINTF("WeatherApi: icon size %d rejected\n", size);
         http.end();
         return false;
     }
 
-    uint8_t* buf = (uint8_t*)malloc(len);
-    if (!buf)
+    uint8_t* tmp = (uint8_t*)malloc(size);
+    if (!tmp)
     {
         http.end();
         return false;
@@ -281,26 +423,24 @@ bool WeatherApi::downloadIcon(const String& url)
     WiFiClient* stream = http.getStreamPtr();
     int read = 0;
     uint32_t start = millis();
-    while (read < len && millis() - start < 8000)
+    while (read < size && millis() - start < 8000)
     {
         int avail = stream->available();
         if (avail > 0)
-            read += stream->readBytes(buf + read, min(avail, len - read));
+            read += stream->readBytes(tmp + read, min(avail, size - read));
         else
             delay(1);
     }
     http.end();
 
-    if (read != len)
+    if (read != size)
     {
-        free(buf);
+        free(tmp);
         return false;
     }
 
-    if (_iconPng)
-        free(_iconPng);
-    _iconPng = buf;
-    _iconLen = len;
-    DPRINTF("WeatherApi: icon downloaded (%d bytes)\n", len);
+    buf = tmp;
+    len = (size_t)size;
+    DPRINTF("WeatherApi: icon downloaded (%d bytes)\n", size);
     return true;
 }

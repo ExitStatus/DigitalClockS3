@@ -2,6 +2,9 @@
 #define _WEATHER_API_H
 
 #include <Arduino.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <freertos/semphr.h>
 
 #include "Interval.h"
 
@@ -44,15 +47,32 @@ struct DayForecast
 // fixed latitude/longitude supplied at construction. On the first Update() after
 // WiFi is up it fetches immediately, then the weather every 10 minutes and the
 // forecast every 30 minutes. Which JSON fields are read -- and therefore which
-// units the values carry -- is supplied as a WeatherFields. All network calls
-// are blocking.
+// units the values carry -- is supplied as a WeatherFields.
+//
+// The HTTP calls are blocking, and a failing one blocks for its whole timeout,
+// so they run on a worker task rather than on the caller's thread. Update() only
+// posts a request and picks up whatever the worker has finished, and returns at
+// once; it never waits for the network.
+//
+// The split of ownership is what keeps this free of locks in the hot path:
+//
+//   * The worker owns the fetching. It parses into staging results and never
+//     touches the fields the accessors below read.
+//   * The caller owns the data. Update() copies a finished result into those
+//     fields, on the caller's thread, at a point of its choosing.
+//
+// So Today(), IconData() and the rest need no synchronisation: nothing mutates
+// them while a render is reading them. The one rule this imposes on the caller
+// is that Update() must not be called from inside a render -- it is the moment
+// the data is allowed to change, and the moment the previous icon buffer is
+// freed. Calling it once at the top of loop(), as main.cpp does, satisfies that.
 class WeatherApi
 {
     public:
         WeatherApi(const char* apiKey, double lat, double lon, const WeatherFields& fields);
 
-        void Begin();
-        void Update(bool wifiConnected);
+        void Begin();                  // starts the worker task
+        void Update(bool wifiConnected);   // non-blocking: collect, then maybe dispatch
 
         // False while there has never been a successful fetch, or once the last
         // successful fetch is older than the staleness window (so stale data is
@@ -86,18 +106,63 @@ class WeatherApi
         const DayForecast& Tomorrow() const { return _tomorrow; }
 
     private:
-        bool fetchWeather();           // query WeatherAPI and read the configured field
-        bool fetchForecast();          // query the 2-day hourly forecast
-        bool downloadIcon(const String& url);
+        // Which fetches the worker has been asked for. These accumulate: an
+        // interval that fires while a fetch is in flight must not be dropped,
+        // and Interval::Ready() re-arms itself the moment it returns true, so
+        // the trigger cannot be read a second time.
+        enum Request : uint8_t
+        {
+            ReqWeather  = 1 << 0,
+            ReqForecast = 1 << 1,
+        };
 
-        void tryWeather();             // fetch with short-retry / staleness handling
-        void tryForecast();
+        // A finished fetch, waiting for the caller to adopt it. The icon buffer's
+        // ownership passes with the struct: whoever holds it last frees it.
+        struct WeatherResult
+        {
+            bool     ok = false;
+            float    temp = 0.0f;
+            float    windSpeed = 0.0f;
+            int      windDegree = 0;
+            uint8_t* iconPng = nullptr;   // non-null only when the icon changed
+            size_t   iconLen = 0;
+        };
+
+        struct ForecastResult
+        {
+            bool ok = false;
+            DayForecast today;
+            DayForecast tomorrow;
+        };
+
+        static void taskEntry(void* arg);
+        void taskLoop();                  // worker thread
+        void dispatch(uint8_t request);   // caller -> worker
+        void collect();                   // worker -> caller; adopts finished results
+
+        void applyWeather(const WeatherResult& r);     // caller thread
+        void applyForecast(const ForecastResult& r);   // caller thread
+
+        // Worker thread. Each writes its result into `out` rather than into the
+        // members, so nothing the accessors expose is touched off-thread.
+        bool fetchWeather(WeatherResult& out);
+        bool fetchForecast(ForecastResult& out);
+        bool downloadIcon(const String& url, uint8_t*& buf, size_t& len);
 
         // Retry/staleness tuning
         static const uint32_t kFetchRetryMs    = 30000;    // short wait between failed attempts
         static const uint8_t  kMaxRetries      = 3;        // short retries before resuming normal interval
         static const uint32_t kWeatherStaleMs  = 1800000;  // 30 min: hide current weather if older
         static const uint32_t kForecastStaleMs = 5400000;  // 90 min: hide forecast if older
+
+        // Worker task. The stack has to carry a TLS handshake (mbedTLS is
+        // stack-hungry) and there is no PSRAM, so this comes out of internal
+        // SRAM; a DEBUG build logs the high-water mark after each fetch.
+        // Pinned to core 0 alongside the WiFi stack, leaving core 1 -- where the
+        // Arduino loop() runs -- free to keep rendering.
+        static const uint32_t   kTaskStack    = 10240;
+        static const UBaseType_t kTaskPriority = 1;   // same as loopTask; below WiFi
+        static const BaseType_t  kTaskCore     = 0;
 
         const char*  _apiKey;
         WeatherFields _fields;
@@ -118,13 +183,25 @@ class WeatherApi
         uint8_t* _iconPng = nullptr;   // heap buffer holding the icon PNG
         size_t   _iconLen = 0;
         uint32_t _iconVersion = 0;
-        String   _lastIconUrl;         // skip re-downloading an unchanged icon
+
+        String   _lastIconUrl;         // worker only: skip re-downloading an unchanged icon
 
         DayForecast _today;
         DayForecast _tomorrow;
 
         Interval _weatherRefresh;   // 10 minutes
         Interval _forecastRefresh;  // 30 minutes
+
+        // ---- shared between the caller and the worker, guarded by _lock ------
+        // Held only for the handover: a few words in dispatch(), a struct copy in
+        // collect(). Never held across a fetch, and never across a render.
+        SemaphoreHandle_t _lock = nullptr;
+        TaskHandle_t      _task = nullptr;
+
+        uint8_t _pending = 0;      // requested, not yet picked up by the worker
+        uint8_t _done    = 0;      // finished, not yet adopted by the caller
+        WeatherResult  _weatherResult;
+        ForecastResult _forecastResult;
 };
 
 #endif // _WEATHER_API_H

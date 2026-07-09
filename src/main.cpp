@@ -295,7 +295,7 @@ void loop()
 
     wifi.Update();               // non-blocking; keeps the link up
     ntp.Update(wifi.IsConnected());
-    weather.Update(wifi.IsConnected());   // blocking network calls (startup + every 10 min)
+    weather.Update(wifi.IsConnected());   // non-blocking; a worker task does the fetching
 
     // Decode a newly downloaded weather icon (once per change).
     if (weather.HasIcon() && weather.IconVersion() != loadedIconVersion)
