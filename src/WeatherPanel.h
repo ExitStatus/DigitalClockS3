@@ -7,7 +7,8 @@
 #include "WeatherIcon.h"
 
 // Draws the weather icon (left) and the current temperature (with a drawn degree
-// ring) to its right, on a bottom-left baseline anchor.
+// ring) to its right, on a bottom-left baseline anchor. The degree letter comes
+// from the configured temperature unit.
 class WeatherPanel
 {
     public:
@@ -15,7 +16,7 @@ class WeatherPanel
 
         // Draws on the bottom baseline 'baselineY' (passed at render time so it
         // tracks the actual display height). Returns the right edge x of the block.
-        int Render(TFT_eSprite* sprite, WeatherIcon& icon, float tempC, int baselineY);
+        int Render(TFT_eSprite* sprite, WeatherIcon& icon, float temp, int baselineY);
 
     private:
         int _x;

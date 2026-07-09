@@ -6,8 +6,8 @@
 #include <ArduinoJson.h>
 #include <math.h>
 
-WeatherApi::WeatherApi(const char* apiKey, double lat, double lon, const char* tempField)
-    : _apiKey(apiKey), _tempField(tempField),
+WeatherApi::WeatherApi(const char* apiKey, double lat, double lon, const WeatherFields& fields)
+    : _apiKey(apiKey), _fields(fields),
       _lat(String(lat, 4)),          // fixed location, no geocoding needed
       _lon(String(lon, 4)),
       _weatherRefresh(600000, true),   // 10 minutes; fetch immediately on first Update
@@ -108,19 +108,19 @@ bool WeatherApi::fetchWeather()
         return false;
     }
 
-    JsonVariant field = doc["current"][_tempField];
+    JsonVariant field = doc["current"][_fields.currentTemp];
     if (field.isNull())
     {
-        DPRINTF("WeatherApi: field '%s' not found in response\n", _tempField);
+        DPRINTF("WeatherApi: field '%s' not found in response\n", _fields.currentTemp);
         return false;
     }
 
     _temp = field.as<float>();
-    _windMph = doc["current"]["wind_mph"] | 0.0f;
+    _windSpeed = doc["current"][_fields.wind] | 0.0f;
     _windDegree = doc["current"]["wind_degree"] | 0;
     _hasWeather = true;
-    DPRINTF("WeatherApi: %s = %.1f, wind %.0f mph @ %d deg\n",
-            _tempField, _temp, _windMph, _windDegree);
+    DPRINTF("WeatherApi: %s = %.1f, wind %.0f (%s) @ %d deg\n",
+            _fields.currentTemp, _temp, _windSpeed, _fields.wind, _windDegree);
 
     // Download the condition icon PNG if its URL changed. The URL is
     // protocol-relative ("//cdn.weatherapi.com/..."), so prefix https:.
@@ -143,7 +143,7 @@ bool WeatherApi::fetchWeather()
 
 // Parse one forecastday's hourly array into the compact structure and compute
 // the day's max temperature and max rain chance.
-static void parseDay(JsonArrayConst hours, DayForecast& out)
+static void parseDay(JsonArrayConst hours, DayForecast& out, const WeatherFields& f)
 {
     out = DayForecast();
 
@@ -157,12 +157,12 @@ static void parseDay(JsonArrayConst hours, DayForecast& out)
         if (n >= 24)
             break;
 
-        float  t    = h["temp_c"] | 0.0f;
+        float  t    = h[f.hourlyTemp] | 0.0f;
         int    rain = h["chance_of_rain"] | 0;
         int    snow = h["chance_of_snow"] | 0;
-        int    wind = (int)lroundf(h["wind_mph"] | 0.0f);
-        int    gust = (int)lroundf(h["gust_mph"] | 0.0f);
-        int    pres = (int)lroundf(h["pressure_mb"] | 0.0f);
+        int    wind = (int)lroundf(h[f.wind] | 0.0f);
+        int    gust = (int)lroundf(h[f.gust] | 0.0f);
+        int    pres = (int)lroundf((h[f.pressure] | 0.0f) * f.pressureScale);
         int8_t ti   = (int8_t)lroundf(t);
 
         out.hourTemp[n]     = ti;
@@ -213,12 +213,12 @@ bool WeatherApi::fetchForecast()
     http.end();
 
     StaticJsonDocument<640> filter;
-    filter["forecast"]["forecastday"][0]["hour"][0]["temp_c"] = true;
+    filter["forecast"]["forecastday"][0]["hour"][0][_fields.hourlyTemp] = true;
     filter["forecast"]["forecastday"][0]["hour"][0]["chance_of_rain"] = true;
     filter["forecast"]["forecastday"][0]["hour"][0]["chance_of_snow"] = true;
-    filter["forecast"]["forecastday"][0]["hour"][0]["wind_mph"] = true;
-    filter["forecast"]["forecastday"][0]["hour"][0]["gust_mph"] = true;
-    filter["forecast"]["forecastday"][0]["hour"][0]["pressure_mb"] = true;
+    filter["forecast"]["forecastday"][0]["hour"][0][_fields.wind] = true;
+    filter["forecast"]["forecastday"][0]["hour"][0][_fields.gust] = true;
+    filter["forecast"]["forecastday"][0]["hour"][0][_fields.pressure] = true;
 
     DynamicJsonDocument doc(8192);
     DeserializationError err =
@@ -234,10 +234,10 @@ bool WeatherApi::fetchForecast()
     if (days.size() < 2)
         return false;
 
-    parseDay(days[0]["hour"], _today);
-    parseDay(days[1]["hour"], _tomorrow);
+    parseDay(days[0]["hour"], _today, _fields);
+    parseDay(days[1]["hour"], _tomorrow, _fields);
 
-    DPRINTF("WeatherApi: forecast today %dC/%d%%/%dmph  tomorrow %dC/%d%%/%dmph\n",
+    DPRINTF("WeatherApi: forecast today %d/%d%%/%d  tomorrow %d/%d%%/%d\n",
             _today.maxTemp, _today.maxRain, _today.maxWind,
             _tomorrow.maxTemp, _tomorrow.maxRain, _tomorrow.maxWind);
     return _today.valid && _tomorrow.valid;

@@ -6,8 +6,9 @@ static const int kDigitGap  = 6;    // gap between the two digits of a pair
 static const int kColonGap  = 4;    // gap either side of the colon
 static const int kColumnGap = 8;    // gap between HH:MM and the AM/PM column
 
-TimePanel::TimePanel()
-    : _big(42, 80, 9)       // large HH:MM digits
+TimePanel::TimePanel(bool use24Hour)
+    : _big(42, 80, 9),      // large HH:MM digits
+      _use24Hour(use24Hour)
 {
 }
 
@@ -57,6 +58,16 @@ void TimePanel::draw(TFT_eSprite* s,
 
 void TimePanel::Render(TFT_eSprite* s, const struct tm& time)
 {
+    if (_use24Hour)
+    {
+        // 00..23, zero-padded, and no AM/PM column.
+        draw(s,
+             time.tm_hour / 10, time.tm_hour % 10,
+             time.tm_min / 10, time.tm_min % 10,
+             nullptr, true);
+        return;
+    }
+
     bool pm = time.tm_hour >= 12;
 
     int hour12 = time.tm_hour % 12;

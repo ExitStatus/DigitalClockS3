@@ -2,6 +2,7 @@
 #include <SPI.h>
 #include <TFT_eSPI.h>
 
+#include "Config.h"
 #include "Font.h"
 #include "Interval.h"
 #include "DatePanel.h"
@@ -55,15 +56,32 @@ static const int kStatusHeight  = 24;   // height of the status row
 static const int kSignalWidth   = 22;   // width of the signal bar graph
 static const int kSignalHeight  = 18;   // height of the signal bar graph
 
+// Which JSON fields WeatherAPI is asked for, and hence the units everything
+// downstream carries. Derived from settings.ini via Config.h.
+static const WeatherFields kWeatherFields = {
+    WEATHER_CURRENT_TEMP_FIELD,
+    WEATHER_HOURLY_TEMP_FIELD,
+    WEATHER_WIND_FIELD,
+    WEATHER_GUST_FIELD,
+    WEATHER_PRESSURE_FIELD,
+    PRESSURE_SCALE,
+};
+
+// The rotating bottom-line stats enabled in settings.ini.
+static const uint8_t kForecastStats =
+      (ENABLED(FORECAST_STAT_MAX_TEMP) ? StatMaxTemp : 0)
+    | (ENABLED(FORECAST_STAT_RAIN)     ? StatRain    : 0)
+    | (ENABLED(FORECAST_STAT_WIND)     ? StatWind    : 0);
+
 WifiManager    wifi(WIFI_SSID, WIFI_PASSWORD);
 SignalBars     signalBars(kSignalWidth, kSignalHeight);
 NtpClient      ntp;
-WeatherApi     weather(WEATHER_API_KEY, LOCATION_LAT, LOCATION_LON, WEATHER_TEMP_FIELD);
+WeatherApi     weather(WEATHER_API_KEY, LOCATION_LAT, LOCATION_LON, kWeatherFields);
 DatePanel      datePanel(kStatusMargin, kStatusMargin + kStatusHeight / 2);   // left, centred on the icon row
-TimePanel      timePanel;
+TimePanel      timePanel(CLOCK_USE_24_HOUR);
 WeatherIcon    weatherIcon(&tft);
 WeatherPanel   weatherPanel(kStatusMargin);   // bottom-left; baseline passed at render
-ForecastPanel  forecastPanel(FORECAST_FADE_MS, FORECAST_HOLD_MS);   // shares the bottom baseline
+ForecastPanel  forecastPanel(FORECAST_FADE_MS, FORECAST_HOLD_MS, kForecastStats);   // shares the bottom baseline
 WindPanel      windPanel;   // bottom-right, same baseline
 
 static const int kBottomMargin = 8;   // gap from the bottom edge to the weather baseline
@@ -75,9 +93,33 @@ OneButton      button2(PIN_BUTTON_2, true, true);
 
 BrightnessOverlay brightnessOverlay(2000);   // centred HUD, visible for 2 s
 
-// Which page is on screen; the KEY button cycles through them in order.
+// Which page is on screen; the KEY button cycles through them in order. The
+// clock is always present; each graph joins the cycle only if settings.ini
+// enables it, so a disabled page is skipped rather than shown blank.
 enum class View { Clock, Temperature, Pressure, Wind, Rain, Snow };
-static View currentView = View::Clock;
+
+static const View kPages[] = {
+    View::Clock,
+#if ENABLED(GRAPH_TEMPERATURE)
+    View::Temperature,
+#endif
+#if ENABLED(GRAPH_PRESSURE)
+    View::Pressure,
+#endif
+#if ENABLED(GRAPH_WIND)
+    View::Wind,
+#endif
+#if ENABLED(GRAPH_RAIN)
+    View::Rain,
+#endif
+#if ENABLED(GRAPH_SNOW)
+    View::Snow,
+#endif
+};
+static const int kPageCount = sizeof(kPages) / sizeof(kPages[0]);
+
+static int  pageIndex = 0;
+static View currentView() { return kPages[pageIndex]; }
 
 Interval fastTick(50);   // ~20 fps redraw while the forecast text is fading
 
@@ -154,7 +196,7 @@ static void renderClockView()
     {
         forecastLeft  = weatherPanel.Render(&frame, weatherIcon, weather.Temperature(), baseline) + 12;
         forecastRight = windPanel.Render(&frame, frame.width() - kStatusMargin,
-                                         weather.WindMph(), weather.WindDegree(), baseline) - 12;
+                                         weather.WindSpeed(), weather.WindDegree(), baseline) - 12;
     }
     forecastPanel.Render(&frame, weather, forecastLeft, forecastRight, baseline);
 
@@ -166,7 +208,7 @@ static void renderFrame()
 {
     frame.fillSprite(TFT_BLACK);
 
-    if (currentView == View::Clock)
+    if (currentView() == View::Clock)
     {
         renderClockView();
     }
@@ -176,13 +218,23 @@ static void renderFrame()
         bool haveTime = ntp.GetTime(now);
         const struct tm* today = haveTime ? &now : nullptr;
 
-        switch (currentView)
+        switch (currentView())
         {
+#if ENABLED(GRAPH_TEMPERATURE)
             case View::Temperature: drawTemperatureGraph(&frame, weather, today); break;
+#endif
+#if ENABLED(GRAPH_PRESSURE)
             case View::Pressure:    drawPressureGraph(&frame, weather, today);    break;
+#endif
+#if ENABLED(GRAPH_WIND)
             case View::Wind:        drawWindGraph(&frame, weather, today);        break;
+#endif
+#if ENABLED(GRAPH_RAIN)
             case View::Rain:        drawRainGraph(&frame, weather, today);        break;
+#endif
+#if ENABLED(GRAPH_SNOW)
             case View::Snow:        drawSnowGraph(&frame, weather, today);        break;
+#endif
             default:                break;
         }
     }
@@ -200,20 +252,11 @@ static void onButton1Click()
     DPRINTF("Backlight -> %d%%\n", backlightPercent);
 }
 
-// Bottom-right button: cycle Clock -> Temperature -> Pressure -> Wind -> Rain
-// -> Snow -> Clock.
+// Bottom-right button: step to the next enabled page, wrapping to the clock.
 static void onButton2Click()
 {
-    switch (currentView)
-    {
-        case View::Clock:       currentView = View::Temperature; break;
-        case View::Temperature: currentView = View::Pressure;    break;
-        case View::Pressure:    currentView = View::Wind;        break;
-        case View::Wind:        currentView = View::Rain;        break;
-        case View::Rain:        currentView = View::Snow;        break;
-        case View::Snow:        currentView = View::Clock;       break;
-    }
-    DPRINTF("View -> %d\n", (int)currentView);
+    pageIndex = (pageIndex + 1) % kPageCount;
+    DPRINTF("View -> %d\n", (int)currentView());
 }
 
 void setup()
@@ -259,13 +302,13 @@ void loop()
     int  minuteNow     = ntp.GetTime(now) ? (now.tm_hour * 60 + now.tm_min) : -1;
     bool minuteChanged = (minuteNow != lastRenderedMinute);
     bool stateChanged  = (wifi.State() != lastRenderedState);
-    bool fading        = (currentView == View::Clock) && forecastPanel.Animating() && fastTick.Ready();
+    bool fading        = (currentView() == View::Clock) && forecastPanel.Animating() && fastTick.Ready();
 
     // Repaint when the brightness HUD appears/updates (TakeDirty) or when it
     // expires (active -> inactive), so it is drawn and later cleared exactly once.
     bool overlayActive  = brightnessOverlay.Active();
     bool overlayChanged = brightnessOverlay.TakeDirty() || (overlayActive != lastOverlayActive);
-    bool viewChanged    = (currentView != lastRenderedView);
+    bool viewChanged    = (currentView() != lastRenderedView);
 
     // The clock only changes once a minute, so repaint on the minute rollover
     // and on WiFi state changes; also at ~20 fps while the forecast fades, and
@@ -276,6 +319,6 @@ void loop()
         lastRenderedMinute = minuteNow;
         lastRenderedState  = wifi.State();
         lastOverlayActive  = overlayActive;
-        lastRenderedView   = currentView;
+        lastRenderedView   = currentView();
     }
 }

@@ -1,13 +1,21 @@
 #include "ForecastPanel.h"
+#include "Config.h"
 #include "Font.h"
 
-ForecastPanel::ForecastPanel(uint32_t fadeMs, uint32_t holdMs)
+ForecastPanel::ForecastPanel(uint32_t fadeMs, uint32_t holdMs, uint8_t statMask)
     : _fadeMs(fadeMs), _holdMs(holdMs), _cycleMs(2 * fadeMs + holdMs)
 {
+    const uint8_t order[] = { StatMaxTemp, StatRain, StatWind };
+    for (uint8_t stat : order)
+        if (statMask & stat)
+            _stats[_count++] = stat;
 }
 
 void ForecastPanel::Update()
 {
+    if (_count == 0)
+        return;
+
     uint32_t now = millis();
 
     if (!_started)
@@ -19,7 +27,7 @@ void ForecastPanel::Update()
 
     if (now - _start >= _cycleMs)
     {
-        _index = (_index + 1) % kStatCount;   // advance to the next stat
+        _index = (_index + 1) % _count;   // advance to the next enabled stat
         _start = now;
     }
 }
@@ -39,6 +47,9 @@ int ForecastPanel::alphaNow() const
 
 bool ForecastPanel::Animating() const
 {
+    if (_count == 0)
+        return false;
+
     uint32_t e = millis() - _start;
     return (e < _fadeMs) || (e >= _fadeMs + _holdMs && e < _cycleMs);
 }
@@ -48,7 +59,7 @@ void ForecastPanel::Render(TFT_eSprite* sprite, const WeatherApi& weather,
 {
     _y = baselineY;   // baseline supplied at render time (tracks display height)
 
-    if (!weather.HasForecast())
+    if (_count == 0 || !weather.HasForecast())
         return;
 
     int alpha = alphaNow();
@@ -58,22 +69,22 @@ void ForecastPanel::Render(TFT_eSprite* sprite, const WeatherApi& weather,
     uint16_t colour = sprite->alphaBlend((uint8_t)alpha, TFT_WHITE, TFT_BLACK);
     int centerX = (leftBound + rightBound) / 2;
 
-    switch (_index)
+    switch (_stats[_index])
     {
-        case 0:
+        case StatMaxTemp:
             drawStat(sprite, centerX, "Max",
                      String(weather.MaxTempToday()) + "/" + String(weather.MaxTempTomorrow()),
                      "", true, colour);
             break;
-        case 1:
+        case StatRain:
             drawStat(sprite, centerX, "Rain",
                      String(weather.RainChanceToday()) + "/" + String(weather.RainChanceTomorrow()),
                      "%", false, colour);
             break;
-        case 2:
+        case StatWind:
             drawStat(sprite, centerX, "Wind",
                      String(weather.MaxWindToday()) + "/" + String(weather.MaxWindTomorrow()),
-                     " mph", false, colour);
+                     " " WIND_UNIT_LABEL, false, colour);
             break;
     }
 }
@@ -92,12 +103,13 @@ void ForecastPanel::drawStat(TFT_eSprite* sprite, int centerX, const char* label
         return;
     }
 
-    // Temperature: "<label> <value>" then a degree ring and 'C', centred as a unit.
+    // Temperature: "<label> <value>" then a degree ring and the unit letter,
+    // centred as a unit.
     String pre = String(label) + " " + value;
     sprite->setTextDatum(L_BASELINE);
 
     int preW = sprite->textWidth(pre);
-    int cW   = sprite->textWidth("C");
+    int cW   = sprite->textWidth(TEMP_UNIT_LABEL);
     int r = 3, ringGap = 2, cGap = 3, ringW = 2 * r;
     int totalW = preW + ringGap + ringW + cGap + cW;
     int startX = centerX - totalW / 2;
@@ -108,5 +120,5 @@ void ForecastPanel::drawStat(TFT_eSprite* sprite, int centerX, const char* label
     int ringCx = startX + preW + ringGap + r;
     sprite->drawCircle(ringCx, _y - ascent + r + 1, r, colour);
 
-    sprite->drawString("C", startX + preW + ringGap + ringW + cGap, _y);
+    sprite->drawString(TEMP_UNIT_LABEL, startX + preW + ringGap + ringW + cGap, _y);
 }

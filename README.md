@@ -114,21 +114,74 @@ The non-secret, user-tunable settings live in `settings.ini`, which
 committed to the repo — the values are shared defaults rather than credentials,
 so you can edit them in place and rebuild.
 
+These are **compile-time** settings, so changing one means reflashing. Every
+token is validated in `include/Config.h`: a misspelt value (`temperature_unit =
+celsius`) fails the build with a message naming the setting, rather than quietly
+falling back to a default.
+
 ```ini
 [settings]
-weather_temp_field = feelslike_c
+time_format = 12                   ; 12 | 24
+
+weather_temp_field = feelslike     ; temp | feelslike
+temperature_unit   = c             ; c | f
+wind_unit          = mph           ; mph | kph
+pressure_unit      = mb            ; mb | inhg
+
+graph_temperature = on             ; on | off
+graph_pressure    = on             ; on | off
+graph_wind        = on             ; on | off
+graph_rain        = on             ; on | off
+graph_snow        = on             ; on | off
+
+forecast_stat_max_temp = on        ; on | off
+forecast_stat_rain     = on        ; on | off
+forecast_stat_wind     = on        ; on | off
 forecast_fade_ms   = 1000
 forecast_hold_ms   = 8000
 ```
 
-- **`weather_temp_field`** — which field of WeatherAPI's `current` object to show
-  as the temperature. Use `feelslike_c` for the "feels like" temperature or
-  `temp_c` for the raw air temperature. (Use the `_f` variants for Fahrenheit,
-  e.g. `temp_f`.) The weather is fetched directly from WeatherAPI for your
-  coordinates — the device does **not** geocode anything at runtime.
-- **`forecast_fade_ms` / `forecast_hold_ms`** — control the rotating forecast stat
-  on the clock page. `fade` is the fade in/out duration and `hold` is how long
-  each stat stays fully visible, both in milliseconds.
+#### Clock
+
+- **`time_format`** — `12` or `24`. In 12-hour mode the hour drops its leading
+  zero and an AM/PM superscript sits to the right of the time. In 24-hour mode
+  the hour is zero-padded (`09:05`) and the superscript disappears, so `HH:MM`
+  centres on its own.
+
+#### Units
+
+Each quantity picks its own unit, so a mixed convention like the UK's (Celsius,
+mph, millibars) is expressible — the defaults above are exactly that.
+
+- **`weather_temp_field`** — which reading drives the temperature: `feelslike`
+  for the apparent "feels like" temperature, or `temp` for the raw air
+  temperature. Combined with `temperature_unit` this names the WeatherAPI field
+  to read. The weather is fetched directly from WeatherAPI for your coordinates —
+  the device does **not** geocode anything at runtime.
+- **`temperature_unit`** — `c` or `f`. Sets the letter drawn beside the degree
+  ring and rescales the temperature graph's colour ramp.
+- **`wind_unit`** — `mph` or `kph`. Also converts the wind arrow's colour
+  thresholds (green below 10 mph, amber at 25, red above 40).
+- **`pressure_unit`** — `mb` or `inhg`. In `inhg` the pressure graph labels its
+  axis to two decimals (`29.92`); in `mb` it stays whole numbers (`1013`).
+
+#### Graph pages
+
+The clock is always the first page. Each graph switched on here joins the cycle
+that the bottom-right button steps through, in the order listed. A graph
+switched off is **compiled out entirely**, so turning one off skips its page and
+reclaims its flash rather than showing a blank screen.
+
+#### Forecast stats
+
+`forecast_stat_max_temp`, `forecast_stat_rain` and `forecast_stat_wind` choose
+which stats fade in and out along the bottom of the clock page. Each one enabled
+joins the rotation; turn all three off to leave the bottom line to the current
+temperature and wind alone.
+
+`forecast_fade_ms` and `forecast_hold_ms` control that rotation: `fade` is the
+fade in/out duration and `hold` is how long each stat stays fully visible, both
+in milliseconds.
 
 ### Display setup (do not change)
 
@@ -171,7 +224,7 @@ platformio.ini      Board, build flags, library deps, embedded fonts (committed)
 settings.ini        User-tunable settings (committed)
 secrets.ini         Your WiFi/API key/location (gitignored; copy from the example)
 secrets.ini.example Template for secrets.ini
-include/            Shared headers (Debug.h, Font.h)
+include/            Shared headers (Config.h, Debug.h, Font.h)
 fonts/              Embedded .vlw fonts (Arial, Gill Sans)
 lib/
   WifiManager/      Non-blocking WiFi station manager with reconnect/escalation
