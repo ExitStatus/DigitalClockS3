@@ -1,4 +1,5 @@
 #include "WindPanel.h"
+#include "Config.h"
 #include "Font.h"
 #include <math.h>
 
@@ -17,15 +18,20 @@ static uint16_t blend(TFT_eSprite* s,
     return s->color565(r, g, b);
 }
 
-// green (<=10) -> orange (25) -> red (>=40)
-uint16_t WindPanel::colourForSpeed(TFT_eSprite* s, float mph) const
+// green (<=10 mph) -> orange (25 mph) -> red (>=40 mph), with the thresholds
+// expressed in whatever unit the speed arrives in.
+uint16_t WindPanel::colourForSpeed(TFT_eSprite* s, float speed) const
 {
-    if (mph <= 10) return s->color565(46, 190, 120);
-    if (mph >= 40) return s->color565(240, 40, 40);
+    const float calm   = WIND_STOP(10);
+    const float breezy = WIND_STOP(25);
+    const float gale   = WIND_STOP(40);
 
-    if (mph < 25)
-        return blend(s, 46, 190, 120,  243, 146, 40, (mph - 10) / 15.0f);   // green -> orange
-    return blend(s, 243, 146, 40,  240, 40, 40, (mph - 25) / 15.0f);         // orange -> red
+    if (speed <= calm) return s->color565(46, 190, 120);
+    if (speed >= gale) return s->color565(240, 40, 40);
+
+    if (speed < breezy)
+        return blend(s, 46, 190, 120,  243, 146, 40, (speed - calm) / (breezy - calm));   // green -> orange
+    return blend(s, 243, 146, 40,  240, 40, 40, (speed - breezy) / (gale - breezy));      // orange -> red
 }
 
 // Draw a filled arrow (dart) pointing along a compass bearing (0 = up/N,
@@ -50,12 +56,12 @@ void WindPanel::drawArrow(TFT_eSprite* s, int cx, int cy, float bearingDeg, int 
     s->fillTriangle(tipX, tipY, nX, nY, lbX, lbY, colour);
 }
 
-int WindPanel::Render(TFT_eSprite* sprite, int rightX, float windMph, int windDegree, int baselineY)
+int WindPanel::Render(TFT_eSprite* sprite, int rightX, float windSpeed, int windDegree, int baselineY)
 {
     sprite->loadFont(gillsans24);   // match the temperature font/size
 
     char buffer[12];
-    snprintf(buffer, sizeof(buffer), "%d mph", (int)lroundf(windMph));
+    snprintf(buffer, sizeof(buffer), "%d " WIND_UNIT_LABEL, (int)lroundf(windSpeed));
     int textW = sprite->textWidth(buffer);
 
     int ascent = sprite->gFont.maxAscent;
@@ -68,7 +74,7 @@ int WindPanel::Render(TFT_eSprite* sprite, int rightX, float windMph, int windDe
     // Arrow points in the direction the wind is blowing towards (wind_degree is
     // the direction it comes from, so add 180), coloured by speed.
     drawArrow(sprite, startX + arrowRadius, baselineY - ascent / 2,
-              windDegree + 180, arrowRadius, colourForSpeed(sprite, windMph));
+              windDegree + 180, arrowRadius, colourForSpeed(sprite, windSpeed));
 
     sprite->setTextColor(TFT_WHITE, TFT_BLACK);
     sprite->setTextDatum(L_BASELINE);

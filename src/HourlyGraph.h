@@ -22,14 +22,22 @@ void drawGraphMessage(TFT_eSprite* sprite, const char* text);
 struct GraphSpec
 {
     const char* title;        // top-of-screen heading
-    const char* unit;         // Y-axis unit text (e.g. "mb"); ignored if degreeUnit
-    bool        degreeUnit;   // draw a degree-C ring instead of unit text
+    const char* unit;         // Y-axis unit text (e.g. "mb"); drawn beside the
+                              // ring, rather than above the axis, if degreeUnit
+    bool        degreeUnit;   // draw a degree ring before the unit text
     int         plotLeft;     // left gutter width (room for the Y labels)
     int         padLo;        // loScale = min - padLo   (unless zeroBase)
     int         padHi;        // hiScale = max + padHi
     bool        floorZero;    // clamp loScale to >= 0
     bool        zeroBase;     // force loScale = 0 (for 0..100% series)
     int         capHi;        // clamp hiScale to this if > 0 (e.g. 100 for %)
+
+    // Series values are integers, so a quantity needing decimals is carried
+    // pre-multiplied (e.g. inHg in hundredths). The axis labels divide by
+    // valueScale and print valueDecimals places; the series itself is untouched.
+    int         valueScale;     // 1 for none
+    int         valueDecimals;  // ignored when valueScale is 1
+
     uint16_t  (*colourFn)(TFT_eSprite*, int);
 };
 

@@ -96,6 +96,17 @@ static void drawSmoothSeries(TFT_eSprite* s, const int* values, int count,
 
 // ---- Axis helper ----------------------------------------------------------
 
+// One Y-axis label, honouring the spec's fixed-point scale.
+static String axisLabel(int v, const GraphSpec& spec)
+{
+    if (spec.valueScale <= 1)
+        return String(v);
+
+    char b[16];
+    snprintf(b, sizeof(b), "%.*f", spec.valueDecimals, (double)v / spec.valueScale);
+    return String(b);
+}
+
 // Round up to a "nice" axis step (1,2,5,10,...) giving roughly targetDivs divisions.
 static int niceStep(int range, int targetDivs)
 {
@@ -152,7 +163,7 @@ void renderHourlyGraph(TFT_eSprite* s, const int* vals, int count,
         int y = plotBottom - (v - loScale) * plotH / (hiScale - loScale);
         if (y < plotTop) continue;
         s->drawFastHLine(plotLeft, y, plotW, gridCol);
-        s->drawString(String(v), plotLeft - 3, y);
+        s->drawString(axisLabel(v, spec), plotLeft - 3, y);
     }
 
     // --- Smooth line(s) through the series ---
@@ -229,7 +240,7 @@ void renderHourlyGraph(TFT_eSprite* s, const int* vals, int count,
     s->setTextDatum(L_BASELINE);
     if (spec.degreeUnit)
     {
-        s->drawString("C", plotLeft - 10, 34);
+        s->drawString(spec.unit, plotLeft - 10, 34);
         s->drawCircle(plotLeft - 14, 34 - s->gFont.maxAscent + 3, 2, s->color565(150, 150, 150));
     }
     else
