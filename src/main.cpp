@@ -168,12 +168,16 @@ static void initFrame()
     frame.createSprite(tft.width(), tft.height());
 }
 
-// WiFi signal strength bar graph, top-right.
+// WiFi signal strength bar graph, top-right; an X while the link is down.
 static void drawStatusCluster()
 {
     int barsX = frame.width() - kStatusMargin - kSignalWidth;
     int barsY = kStatusMargin + (kStatusHeight - kSignalHeight) / 2;
-    signalBars.Render(&frame, barsX, barsY, wifi.SignalPercent());
+
+    if (wifi.IsConnected())
+        signalBars.Render(&frame, barsX, barsY, wifi.SignalPercent());
+    else
+        signalBars.RenderNoLink(&frame, barsX, barsY);
 }
 
 // The default page: live clock, date, weather, and status cluster.

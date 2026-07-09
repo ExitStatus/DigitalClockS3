@@ -59,3 +59,26 @@ void SignalBars::Render(TFT_eSprite* sprite, int x, int y, int percent)
             sprite->drawRect(bx, by, barWidth, barHeight, colour);
     }
 }
+
+void SignalBars::RenderNoLink(TFT_eSprite* sprite, int x, int y)
+{
+    uint16_t colour = colourFor(sprite, 0);   // the weak end of the ramp: red
+
+    // A square X, centred in the footprint the bars would have occupied, so the
+    // status row keeps its size and position whether the link is up or down.
+    int side = (_width < _height) ? _width : _height;
+    int x0 = x + (_width  - side) / 2;
+    int y0 = y + (_height - side) / 2;
+    int x1 = x0 + side - 1;
+    int y1 = y0 + side - 1;
+
+    // Thicken each diagonal by sliding it along both axes; one stroke on its own
+    // is a single pixel wide and reads as a hairline at this size.
+    for (int i = 0; i < kStroke; i++)
+    {
+        sprite->drawLine(x0 + i, y0,     x1,     y1 - i, colour);   // '\'
+        sprite->drawLine(x0,     y0 + i, x1 - i, y1,     colour);
+        sprite->drawLine(x1 - i, y0,     x0,     y1 - i, colour);   // '/'
+        sprite->drawLine(x1,     y0 + i, x0 + i, y1,     colour);
+    }
+}
