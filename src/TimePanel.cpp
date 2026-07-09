@@ -6,19 +6,27 @@ static const int kDigitGap  = 6;    // gap between the two digits of a pair
 static const int kColonGap  = 4;    // gap either side of the colon
 static const int kColumnGap = 8;    // gap between HH:MM and the AM/PM column
 
-TimePanel::TimePanel(bool use24Hour)
+TimePanel::TimePanel(bool use24Hour, bool blinkColon)
     : _big(42, 80, 9),      // large HH:MM digits
-      _use24Hour(use24Hour)
+      _use24Hour(use24Hour),
+      _blinkColon(blinkColon)
 {
+}
+
+// Lit on even seconds, dark on odd, so a full blink cycle takes two seconds.
+// Not blinking means always lit.
+bool TimePanel::colonLit(const struct tm& time) const
+{
+    return !_blinkColon || (time.tm_sec % 2 == 0);
 }
 
 void TimePanel::draw(TFT_eSprite* s,
                      int h0, int h1, int m0, int m1,
-                     const char* ampm, bool known)
+                     const char* ampm, bool colonLit)
 {
     uint16_t on       = s->color565(240, 40, 40);   // active: red
     uint16_t off      = s->color565(10, 10, 10);    // inactive: dark grey
-    uint16_t colonCol = known ? on : off;
+    uint16_t colonCol = colonLit ? on : off;
 
     int Wm     = _big.Width();
     int Hm     = _big.Height();
@@ -64,7 +72,7 @@ void TimePanel::Render(TFT_eSprite* s, const struct tm& time)
         draw(s,
              time.tm_hour / 10, time.tm_hour % 10,
              time.tm_min / 10, time.tm_min % 10,
-             nullptr, true);
+             nullptr, colonLit(time));
         return;
     }
 
@@ -80,7 +88,7 @@ void TimePanel::Render(TFT_eSprite* s, const struct tm& time)
     draw(s,
          h0, h1,
          time.tm_min / 10, time.tm_min % 10,
-         pm ? "PM" : "AM", true);
+         pm ? "PM" : "AM", colonLit(time));
 }
 
 void TimePanel::RenderUnknown(TFT_eSprite* s)

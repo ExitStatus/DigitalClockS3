@@ -49,6 +49,10 @@
 #error "settings.ini: time_format must be '12' or '24'"
 #endif
 
+#if !ENABLED(BLINK_COLON) && BLINK_COLON != SW_off
+#error "settings.ini: blink_colon must be 'on' or 'off'"
+#endif
+
 #if !ENABLED(GRAPH_TEMPERATURE) && GRAPH_TEMPERATURE != SW_off
 #error "settings.ini: graph_temperature must be 'on' or 'off'"
 #endif
@@ -77,7 +81,8 @@
 
 // ---- Clock ----------------------------------------------------------------
 
-#define CLOCK_USE_24_HOUR (TIME_FORMAT == FMT_24)
+#define CLOCK_USE_24_HOUR   (TIME_FORMAT == FMT_24)
+#define CLOCK_BLINK_COLON   ENABLED(BLINK_COLON)
 
 // ---- Temperature ----------------------------------------------------------
 
