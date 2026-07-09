@@ -16,7 +16,8 @@ no filesystem to prepare.
 **Clock page**
 
 - Large seven-segment `HH:MM` with an `AM`/`PM` superscript.
-- Date (top-left), WiFi signal-strength bars (top-right).
+- Date (top-left), WiFi signal-strength bars (top-right). The bars become a red
+  X whenever the link is down, so an outage is distinct from a weak signal.
 - Weather strip along the bottom: condition icon + temperature, a rotating
   forecast stat that fades in and out, and a wind arrow + speed.
 - Time is synced from NTP once an hour and free-runs from the internal
