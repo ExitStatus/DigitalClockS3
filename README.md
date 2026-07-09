@@ -198,3 +198,9 @@ Pulled in automatically by PlatformIO (`lib_deps`):
 - [OneButton](https://github.com/mathertel/OneButton) — button click handling
 - [PNGdec](https://github.com/bitbank2/PNGdec) — decodes the weather condition icon
 - [ArduinoJson](https://arduinojson.org/) — parses the WeatherAPI responses
+
+---
+
+## License
+
+Released under the [MIT License](LICENSE).
