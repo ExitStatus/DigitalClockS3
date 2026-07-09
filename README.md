@@ -127,6 +127,9 @@ falling back to a default.
 time_format = 12                   ; 12 | 24
 blink_colon = on                   ; on | off
 
+segment_active_colour   = F02828   ; RRGGBB
+segment_inactive_colour = 0A0A0A   ; RRGGBB
+
 weather_temp_field = feelslike     ; temp | feelslike
 temperature_unit   = c             ; c | f
 wind_unit          = mph           ; mph | kph
@@ -156,6 +159,16 @@ forecast_hold_ms   = 8000
   seconds. Off leaves it lit permanently. Note that the clock page would
   otherwise repaint only on the minute rollover; blinking makes it repaint every
   second, which is the cost of the effect.
+- **`segment_active_colour` / `segment_inactive_colour`** — the colours of the
+  seven-segment digits, as `RRGGBB` hex with **no** leading `#` or `0x`. Every
+  segment is drawn every time: lit ones in the active colour, unlit ones in the
+  inactive colour, which is what gives the digits their "ghost" outline. Set the
+  inactive colour to `000000` to remove the ghosting. The AM/PM superscript and
+  the colon both take the active colour.
+
+  The panel is 16-bit, so each colour is quantised on the way to the display —
+  red and blue to 5 bits, green to 6. Two hex values within a few units of each
+  other can land on the same on-screen colour.
 
 #### Units
 
