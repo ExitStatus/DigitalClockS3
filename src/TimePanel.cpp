@@ -6,10 +6,13 @@ static const int kDigitGap  = 6;    // gap between the two digits of a pair
 static const int kColonGap  = 4;    // gap either side of the colon
 static const int kColumnGap = 8;    // gap between HH:MM and the AM/PM column
 
-TimePanel::TimePanel(bool use24Hour, bool blinkColon)
+TimePanel::TimePanel(bool use24Hour, bool blinkColon,
+                     uint16_t activeColour, uint16_t inactiveColour)
     : _big(42, 80, 9),      // large HH:MM digits
       _use24Hour(use24Hour),
-      _blinkColon(blinkColon)
+      _blinkColon(blinkColon),
+      _active(activeColour),
+      _inactive(inactiveColour)
 {
 }
 
@@ -24,8 +27,8 @@ void TimePanel::draw(TFT_eSprite* s,
                      int h0, int h1, int m0, int m1,
                      const char* ampm, bool colonLit)
 {
-    uint16_t on       = s->color565(240, 40, 40);   // active: red
-    uint16_t off      = s->color565(10, 10, 10);    // inactive: dark grey
+    uint16_t on       = _active;
+    uint16_t off      = _inactive;
     uint16_t colonCol = colonLit ? on : off;
 
     int Wm     = _big.Width();

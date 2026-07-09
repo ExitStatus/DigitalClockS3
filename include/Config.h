@@ -53,6 +53,19 @@
 #error "settings.ini: blink_colon must be 'on' or 'off'"
 #endif
 
+// These catch the in-range-but-too-long case, e.g. a stray digit turning F02828
+// into F028288. A non-hex character is caught too, but by the preprocessor
+// rather than here: 0xGG2828 is not a valid token, and the error ("user-defined
+// literal in preprocessor expression") points at the line below without naming
+// the setting. Unlike the token switches, there is no way to validate the
+// alphabet of a hex literal from inside #if.
+#if SEGMENT_ACTIVE_RGB > 0xFFFFFF
+#error "settings.ini: segment_active_colour must be RRGGBB hex, no '#' or '0x'"
+#endif
+#if SEGMENT_INACTIVE_RGB > 0xFFFFFF
+#error "settings.ini: segment_inactive_colour must be RRGGBB hex, no '#' or '0x'"
+#endif
+
 #if !ENABLED(GRAPH_TEMPERATURE) && GRAPH_TEMPERATURE != SW_off
 #error "settings.ini: graph_temperature must be 'on' or 'off'"
 #endif
@@ -83,6 +96,15 @@
 
 #define CLOCK_USE_24_HOUR   (TIME_FORMAT == FMT_24)
 #define CLOCK_BLINK_COLON   ENABLED(BLINK_COLON)
+
+// 24-bit RRGGBB down to the panel's 16-bit 5-6-5, matching TFT_eSPI::color565()
+// exactly. Done here so the colours are constants rather than a per-frame call.
+#define RGB565(rgb) ((uint16_t)((((rgb) >> 19) & 0x1F) << 11 | \
+                                (((rgb) >> 10) & 0x3F) <<  5 | \
+                                (((rgb) >>  3) & 0x1F)))
+
+#define SEGMENT_ACTIVE_COLOUR    RGB565(SEGMENT_ACTIVE_RGB)
+#define SEGMENT_INACTIVE_COLOUR  RGB565(SEGMENT_INACTIVE_RGB)
 
 // ---- Temperature ----------------------------------------------------------
 
