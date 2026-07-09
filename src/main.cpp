@@ -1,0 +1,277 @@
+#include <Arduino.h>
+#include <SPI.h>
+#include <TFT_eSPI.h>
+
+#include "Font.h"
+#include "Interval.h"
+#include "DatePanel.h"
+#include "NtpClient.h"
+#include "WeatherApi.h"
+#include "SignalBars.h"
+#include "TimePanel.h"
+#include "WeatherPanel.h"
+#include "WeatherIcon.h"
+#include "ForecastPanel.h"
+#include "WindPanel.h"
+#include "WifiManager.h"
+#include "BrightnessOverlay.h"
+#include "WeatherGraphs.h"
+
+#include <OneButton.h>
+#include "Debug.h"
+
+#define PIN_LCD_BL 38
+
+// The T-Display-S3's two on-board push buttons (active-low).
+#define PIN_BUTTON_1 0    // BOOT button (also the strapping/boot pin)
+#define PIN_BUTTON_2 14   // KEY button
+static const int kBacklightFreq    = 5000;
+static const int kBacklightChannel = 0;
+static const int kBacklightBits    = 8;
+
+// Backlight brightness, in 10% steps (10..100), cycled by the bottom-left button.
+static int backlightPercent = 50;
+
+static void applyBacklight()
+{
+    ledcWrite(kBacklightChannel, backlightPercent * 255 / 100);   // 0..255 duty
+}
+
+// One step brighter; after 100% wrap back around to 10%.
+static void cycleBacklight()
+{
+    backlightPercent += 10;
+    if (backlightPercent > 100)
+        backlightPercent = 10;
+    applyBacklight();
+}
+
+TFT_eSPI    tft   = TFT_eSPI();
+TFT_eSprite frame = TFT_eSprite(&tft);   // full-screen offscreen buffer
+
+// Top-right status geometry
+static const int kStatusMargin  = 6;    // gap from top/right edges
+static const int kStatusHeight  = 24;   // height of the status row
+static const int kSignalWidth   = 22;   // width of the signal bar graph
+static const int kSignalHeight  = 18;   // height of the signal bar graph
+
+WifiManager    wifi(WIFI_SSID, WIFI_PASSWORD);
+SignalBars     signalBars(kSignalWidth, kSignalHeight);
+NtpClient      ntp;
+WeatherApi     weather(WEATHER_API_KEY, LOCATION_LAT, LOCATION_LON, WEATHER_TEMP_FIELD);
+DatePanel      datePanel(kStatusMargin, kStatusMargin + kStatusHeight / 2);   // left, centred on the icon row
+TimePanel      timePanel;
+WeatherIcon    weatherIcon(&tft);
+WeatherPanel   weatherPanel(kStatusMargin, 162);   // bottom-left baseline, below the clock
+ForecastPanel  forecastPanel(162, FORECAST_FADE_MS, FORECAST_HOLD_MS);   // shares the bottom baseline
+WindPanel      windPanel(162);   // bottom-right, same baseline
+
+// On-board buttons. OneButton(pin, activeLow, pullupActive): both buttons pull
+// to GND when pressed, so activeLow=true with the internal pull-up enabled.
+OneButton      button1(PIN_BUTTON_1, true, true);
+OneButton      button2(PIN_BUTTON_2, true, true);
+
+BrightnessOverlay brightnessOverlay(2000);   // centred HUD, visible for 2 s
+
+// Which page is on screen; the KEY button cycles through them in order.
+enum class View { Clock, Temperature, Pressure, Wind, Rain, Snow };
+static View currentView = View::Clock;
+
+Interval fastTick(50);   // ~20 fps redraw while the forecast text is fading
+
+static uint32_t loadedIconVersion = 0;
+static int      weatherIconHeight = 22;   // set from the temperature font in setup()
+
+// Minute-of-day of the last rendered frame (0..1439, or -1 when the time is
+// unknown). Starts at -2 so the very first loop() always paints one frame.
+static int       lastRenderedMinute = -2;
+
+static WifiState lastRenderedState  = WifiState::Idle;
+static bool      lastOverlayActive  = false;   // was the brightness HUD visible last frame
+static View      lastRenderedView   = View::Clock;
+
+static void initDisplay()
+{
+    tft.init();
+    tft.setRotation(1);
+    tft.fillScreen(TFT_BLACK);
+}
+
+static void initBacklight()
+{
+    pinMode(PIN_LCD_BL, OUTPUT);
+    ledcSetup(kBacklightChannel, kBacklightFreq, kBacklightBits);
+    ledcAttachPin(PIN_LCD_BL, kBacklightChannel);
+    applyBacklight();            // start at the default brightness step
+}
+
+static void initSerialForDebug()
+{
+#ifdef DEBUG
+    Serial.begin(115200);
+    Serial.setTimeout(2000);
+    while (!Serial) { }
+#endif
+}
+
+static void initFrame()
+{
+    frame.setColorDepth(16);
+    frame.createSprite(tft.width(), tft.height());
+}
+
+// WiFi signal strength bar graph, top-right.
+static void drawStatusCluster()
+{
+    int barsX = frame.width() - kStatusMargin - kSignalWidth;
+    int barsY = kStatusMargin + (kStatusHeight - kSignalHeight) / 2;
+    signalBars.Render(&frame, barsX, barsY, wifi.SignalPercent());
+}
+
+// The default page: live clock, date, weather, and status cluster.
+static void renderClockView()
+{
+    struct tm now;
+    if (ntp.GetTime(now))
+    {
+        timePanel.Render(&frame, now);   // large live clock, centred
+        datePanel.Render(&frame, now);   // date, top-left
+    }
+    else
+    {
+        timePanel.RenderUnknown(&frame); // placeholder until the clock syncs
+    }
+
+    // Bottom line: [icon][temperature] ... [rotating forecast] ... [wind].
+    // The forecast is centred in the space between the temperature and the wind.
+    int forecastLeft  = kStatusMargin;
+    int forecastRight = frame.width() - kStatusMargin;
+    if (weather.HasWeather())
+    {
+        forecastLeft  = weatherPanel.Render(&frame, weatherIcon, weather.Temperature()) + 12;
+        forecastRight = windPanel.Render(&frame, frame.width() - kStatusMargin,
+                                         weather.WindMph(), weather.WindDegree()) - 12;
+    }
+    forecastPanel.Render(&frame, weather, forecastLeft, forecastRight);
+
+    drawStatusCluster();
+}
+
+// Compose the current page offscreen, then blit it in one pass.
+static void renderFrame()
+{
+    frame.fillSprite(TFT_BLACK);
+
+    if (currentView == View::Clock)
+    {
+        renderClockView();
+    }
+    else
+    {
+        struct tm now;
+        bool haveTime = ntp.GetTime(now);
+        const struct tm* today = haveTime ? &now : nullptr;
+
+        switch (currentView)
+        {
+            case View::Temperature: drawTemperatureGraph(&frame, weather, today); break;
+            case View::Pressure:    drawPressureGraph(&frame, weather, today);    break;
+            case View::Wind:        drawWindGraph(&frame, weather, today);        break;
+            case View::Rain:        drawRainGraph(&frame, weather, today);        break;
+            case View::Snow:        drawSnowGraph(&frame, weather, today);        break;
+            default:                break;
+        }
+    }
+
+    brightnessOverlay.Render(&frame);   // transient HUD, drawn on top of everything
+
+    frame.pushSprite(0, 0);
+}
+
+// Bottom-left button: step the backlight up by 10%, wrapping 100% -> 10%.
+static void onButton1Click()
+{
+    cycleBacklight();
+    brightnessOverlay.Show(backlightPercent);   // reveal/refresh the HUD for 2 s
+    DPRINTF("Backlight -> %d%%\n", backlightPercent);
+}
+
+// Bottom-right button: cycle Clock -> Temperature -> Pressure -> Wind -> Rain
+// -> Snow -> Clock.
+static void onButton2Click()
+{
+    switch (currentView)
+    {
+        case View::Clock:       currentView = View::Temperature; break;
+        case View::Temperature: currentView = View::Pressure;    break;
+        case View::Pressure:    currentView = View::Wind;        break;
+        case View::Wind:        currentView = View::Rain;        break;
+        case View::Rain:        currentView = View::Snow;        break;
+        case View::Snow:        currentView = View::Clock;       break;
+    }
+    DPRINTF("View -> %d\n", (int)currentView);
+}
+
+void setup()
+{
+    initDisplay();
+    initBacklight();
+    btStop();                    // no Bluetooth needed
+    initSerialForDebug();
+    initFrame();
+
+    // Size the weather icon to 20% taller than the temperature digits (Gill Sans 24).
+    frame.loadFont(gillsans24);
+    weatherIconHeight = frame.gFont.maxAscent * 6 / 5;
+
+    button1.attachClick(onButton1Click);
+    button2.attachClick(onButton2Click);
+
+    wifi.Begin();
+    ntp.Begin();
+    weather.Begin();
+}
+
+void loop()
+{
+    button1.tick();              // poll the buttons (non-blocking, millis-debounced)
+    button2.tick();
+
+    wifi.Update();               // non-blocking; keeps the link up
+    ntp.Update(wifi.IsConnected());
+    weather.Update(wifi.IsConnected());   // blocking network calls (startup + every 10 min)
+
+    // Decode a newly downloaded weather icon (once per change).
+    if (weather.HasIcon() && weather.IconVersion() != loadedIconVersion)
+    {
+        if (weatherIcon.Load(weather.IconData(), weather.IconLength(), weatherIconHeight))
+            loadedIconVersion = weather.IconVersion();
+    }
+
+    forecastPanel.Update();      // advance the rotating-stat fade state
+
+    // Current minute-of-day, or -1 while the clock has not synced yet.
+    struct tm now;
+    int  minuteNow     = ntp.GetTime(now) ? (now.tm_hour * 60 + now.tm_min) : -1;
+    bool minuteChanged = (minuteNow != lastRenderedMinute);
+    bool stateChanged  = (wifi.State() != lastRenderedState);
+    bool fading        = (currentView == View::Clock) && forecastPanel.Animating() && fastTick.Ready();
+
+    // Repaint when the brightness HUD appears/updates (TakeDirty) or when it
+    // expires (active -> inactive), so it is drawn and later cleared exactly once.
+    bool overlayActive  = brightnessOverlay.Active();
+    bool overlayChanged = brightnessOverlay.TakeDirty() || (overlayActive != lastOverlayActive);
+    bool viewChanged    = (currentView != lastRenderedView);
+
+    // The clock only changes once a minute, so repaint on the minute rollover
+    // and on WiFi state changes; also at ~20 fps while the forecast fades, and
+    // whenever the page or brightness HUD changes.
+    if (minuteChanged || stateChanged || fading || overlayChanged || viewChanged)
+    {
+        renderFrame();
+        lastRenderedMinute = minuteNow;
+        lastRenderedState  = wifi.State();
+        lastOverlayActive  = overlayActive;
+        lastRenderedView   = currentView;
+    }
+}
