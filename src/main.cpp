@@ -290,12 +290,21 @@ void setup()
 
 void loop()
 {
+#ifdef DEBUG
+    // TEMPORARY INSTRUMENTATION -- remove before committing.
+    // Worst single loop() iteration in the last 5 s. A blocking fetch shows up
+    // here as a multi-hundred-ms spike; a worker task should not.
+    static uint32_t worstLoopMs = 0;
+    static Interval loopReport(5000);
+    uint32_t loopT0 = millis();
+#endif
+
     button1.tick();              // poll the buttons (non-blocking, millis-debounced)
     button2.tick();
 
     wifi.Update();               // non-blocking; keeps the link up
     ntp.Update(wifi.IsConnected());
-    weather.Update(wifi.IsConnected());   // blocking network calls (startup + every 10 min)
+    weather.Update(wifi.IsConnected());   // non-blocking; a worker task does the fetching
 
     // Decode a newly downloaded weather icon (once per change).
     if (weather.HasIcon() && weather.IconVersion() != loadedIconVersion)
@@ -341,4 +350,16 @@ void loop()
         lastOverlayActive  = overlayActive;
         lastRenderedView   = currentView();
     }
+
+#ifdef DEBUG
+    // TEMPORARY INSTRUMENTATION -- remove before committing.
+    uint32_t elapsed = millis() - loopT0;
+    if (elapsed > worstLoopMs)
+        worstLoopMs = elapsed;
+    if (loopReport.Ready())
+    {
+        DPRINTF("loop: worst iteration %u ms in the last 5 s\n", (unsigned)worstLoopMs);
+        worstLoopMs = 0;
+    }
+#endif
 }
