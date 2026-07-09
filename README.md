@@ -103,33 +103,32 @@ location_lon    = -0.1278
   [**Finding your location**](#finding-your-location) below.
 
 `secrets.ini` is listed in `.gitignore`, so your credentials never enter version
-control. `platformio.ini` pulls it in via `extra_configs = secrets.ini` in its
-`[platformio]` section. If `secrets.ini` is missing, the build will fail with an
+control. `platformio.ini` pulls it in via `extra_configs` in its `[platformio]`
+section. If `secrets.ini` is missing, the build will fail with an
 unresolved-interpolation error — copy the example first.
 
-### Weather display (`platformio.ini`)
+### Settings (`settings.ini`)
+
+The non-secret, user-tunable settings live in `settings.ini`, which
+`platformio.ini` also pulls in via `extra_configs`. Unlike `secrets.ini`, it is
+committed to the repo — the values are shared defaults rather than credentials,
+so you can edit them in place and rebuild.
 
 ```ini
--D WEATHER_TEMP_FIELD=\"feelslike_c\"
+[settings]
+weather_temp_field = feelslike_c
+forecast_fade_ms   = 1000
+forecast_hold_ms   = 8000
 ```
 
-Which field of WeatherAPI's `current` object to show as the temperature. Use
-`"feelslike_c"` for the "feels like" temperature or `"temp_c"` for the raw air
-temperature. (Use the `_f` variants for Fahrenheit, e.g. `"temp_f"`.)
-
-The weather is fetched directly from WeatherAPI for your coordinates — the device
-does **not** geocode anything at runtime.
-
-### Forecast animation (`platformio.ini`)
-
-```ini
--D FORECAST_FADE_MS=1000
--D FORECAST_HOLD_MS=8000
-```
-
-Controls the rotating forecast stat on the clock page: `FADE_MS` is the fade
-in/out duration and `HOLD_MS` is how long each stat stays fully visible, both in
-milliseconds.
+- **`weather_temp_field`** — which field of WeatherAPI's `current` object to show
+  as the temperature. Use `feelslike_c` for the "feels like" temperature or
+  `temp_c` for the raw air temperature. (Use the `_f` variants for Fahrenheit,
+  e.g. `temp_f`.) The weather is fetched directly from WeatherAPI for your
+  coordinates — the device does **not** geocode anything at runtime.
+- **`forecast_fade_ms` / `forecast_hold_ms`** — control the rotating forecast stat
+  on the clock page. `fade` is the fade in/out duration and `hold` is how long
+  each stat stays fully visible, both in milliseconds.
 
 ### Display setup (do not change)
 
@@ -169,6 +168,7 @@ meridian.
 
 ```
 platformio.ini      Board, build flags, library deps, embedded fonts (committed)
+settings.ini        User-tunable settings (committed)
 secrets.ini         Your WiFi/API key/location (gitignored; copy from the example)
 secrets.ini.example Template for secrets.ini
 include/            Shared headers (Debug.h, Font.h)
