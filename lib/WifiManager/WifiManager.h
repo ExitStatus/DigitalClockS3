@@ -20,6 +20,10 @@ enum class WifiState
 // Update() every loop() iteration. It drives a small state machine that keeps
 // the link up: it retries a failed connection and automatically reconnects
 // after a dropout, and it never blocks (no delay(), no busy-wait loops).
+//
+// Association loss is noticed immediately, on the loop() that follows it. A
+// link that has gone dead while still *reporting* itself associated is caught
+// by a health probe every HealthCheckMs; see linkUp().
 class WifiManager
 {
     public:
@@ -40,6 +44,7 @@ class WifiManager
         void setState(WifiState state);
         void resetAdapter();          // power-cycle the radio and reconnect
         void checkDisconnectEscalation();
+        bool linkUp() const;          // associated *and* holding an IP address
 
         const char* _ssid;
         const char* _password;
@@ -51,10 +56,12 @@ class WifiManager
         uint32_t  _lastConnectedMs = 0;   // millis() we were last connected (0 = never)
         bool      _adapterResetDone = false;   // 1-hour reset already done this outage
         uint32_t  _lastRssiLog = 0;       // throttle for DEBUG RSSI logging
+        uint32_t  _lastHealthCheck = 0;   // millis() of the last link health probe
 
         // Tuning
         static const uint32_t ConnectTimeoutMs = 15000;      // abandon an attempt after this
         static const uint32_t RetryIntervalMs  = 5000;       // minimum gap between attempts
+        static const uint32_t HealthCheckMs    = 10000;      // how often to probe a live link
         static const uint32_t ResetAfterMs     = 3600000;    // 1 hour down -> reset adapter
         static const uint32_t RebootAfterMs    = 14400000;   // 4 hours down -> reboot
 

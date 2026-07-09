@@ -23,7 +23,7 @@ void WifiManager::Update()
             break;
 
         case WifiState::Connecting:
-            if (WiFi.status() == WL_CONNECTED)
+            if (linkUp())
                 setState(WifiState::Connected);
             else if (millis() - _stateSince >= ConnectTimeoutMs)
                 setState(WifiState::Disconnected);   // attempt timed out; retry later
@@ -31,7 +31,18 @@ void WifiManager::Update()
 
         case WifiState::Connected:
             if (WiFi.status() != WL_CONNECTED)
-                setState(WifiState::Disconnected);   // dropout detected
+            {
+                setState(WifiState::Disconnected);   // association lost
+            }
+            else if (millis() - _lastHealthCheck >= HealthCheckMs)
+            {
+                _lastHealthCheck = millis();
+                if (!linkUp())
+                {
+                    DPRINTLN("WifiManager: health check failed, link is down");
+                    setState(WifiState::Disconnected);
+                }
+            }
             break;
 
         case WifiState::Disconnected:
@@ -98,6 +109,16 @@ void WifiManager::startAttempt()
     setState(WifiState::Connecting);
 }
 
+// WL_CONNECTED means the station has associated with the AP, which is a weaker
+// claim than "the link works": a lapsed DHCP lease, or an AP that answers the
+// association but stops routing, leaves the status untouched while the address
+// falls back to 0.0.0.0. Require an address too, so those show up as a dropout
+// rather than as a connection that silently carries no traffic.
+bool WifiManager::linkUp() const
+{
+    return WiFi.status() == WL_CONNECTED && (uint32_t)WiFi.localIP() != 0;
+}
+
 int WifiManager::SignalPercent() const
 {
     if (_state != WifiState::Connected)
@@ -118,5 +139,9 @@ void WifiManager::setState(WifiState state)
 
     _state = state;
     _stateSince = millis();
+
+    if (state == WifiState::Connected)
+        _lastHealthCheck = millis();   // a full interval before the first probe
+
     DPRINTF("WifiManager: state -> %d\n", (int)state);
 }
