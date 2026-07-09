@@ -1,8 +1,8 @@
 #include "ForecastPanel.h"
 #include "Font.h"
 
-ForecastPanel::ForecastPanel(int baselineY, uint32_t fadeMs, uint32_t holdMs)
-    : _y(baselineY), _fadeMs(fadeMs), _holdMs(holdMs), _cycleMs(2 * fadeMs + holdMs)
+ForecastPanel::ForecastPanel(uint32_t fadeMs, uint32_t holdMs)
+    : _fadeMs(fadeMs), _holdMs(holdMs), _cycleMs(2 * fadeMs + holdMs)
 {
 }
 
@@ -44,8 +44,10 @@ bool ForecastPanel::Animating() const
 }
 
 void ForecastPanel::Render(TFT_eSprite* sprite, const WeatherApi& weather,
-                           int leftBound, int rightBound)
+                           int leftBound, int rightBound, int baselineY)
 {
+    _y = baselineY;   // baseline supplied at render time (tracks display height)
+
     if (!weather.HasForecast())
         return;
 

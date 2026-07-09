@@ -31,8 +31,11 @@ void BrightnessOverlay::Render(TFT_eSprite* s)
     if (!Active())
         return;
 
-    const int W = 168, H = 72, r = 10;
-    int x = (s->width()  - W) / 2;
+    const int r = 10;
+    int W = 168, H = 72;                       // preferred size, clamped to the display
+    if (W > s->width()  - 8) W = s->width()  - 8;
+    if (H > s->height() - 8) H = s->height() - 8;
+    int x = (s->width()  - W) / 2;             // always centred, whatever the resolution
     int y = (s->height() - H) / 2;
 
     uint16_t bg     = s->color565(28, 28, 30);

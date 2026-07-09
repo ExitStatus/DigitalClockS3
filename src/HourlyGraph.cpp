@@ -129,11 +129,12 @@ void renderHourlyGraph(TFT_eSprite* s, const int* vals, int count,
     if (spec.capHi > 0 && hiScale > spec.capHi) hiScale = spec.capHi;
     if (hiScale <= loScale) hiScale = loScale + 1;   // guard against divide-by-zero
 
-    // Plot area
+    // Plot area. plotTop is a fixed top band (title + date labels); the rest is
+    // derived from the sprite size, so the graph tracks the display resolution.
     const int plotLeft   = spec.plotLeft;
     const int plotRight  = s->width() - 6;
     const int plotTop    = 40;
-    const int plotBottom = 148;
+    const int plotBottom = s->height() - 22;   // room below for the hour labels
     const int plotW      = plotRight - plotLeft;
     const int plotH      = plotBottom - plotTop;
 

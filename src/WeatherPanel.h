@@ -11,14 +11,14 @@
 class WeatherPanel
 {
     public:
-        WeatherPanel(int x, int baselineY);
+        explicit WeatherPanel(int x);
 
-        // Returns the x coordinate of the right edge of what was drawn.
-        int Render(TFT_eSprite* sprite, WeatherIcon& icon, float tempC);
+        // Draws on the bottom baseline 'baselineY' (passed at render time so it
+        // tracks the actual display height). Returns the right edge x of the block.
+        int Render(TFT_eSprite* sprite, WeatherIcon& icon, float tempC, int baselineY);
 
     private:
         int _x;
-        int _y;   // text baseline
 
         static const int kIconGap = 6;   // gap between the icon and the temperature
 };

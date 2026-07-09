@@ -62,9 +62,11 @@ WeatherApi     weather(WEATHER_API_KEY, LOCATION_LAT, LOCATION_LON, WEATHER_TEMP
 DatePanel      datePanel(kStatusMargin, kStatusMargin + kStatusHeight / 2);   // left, centred on the icon row
 TimePanel      timePanel;
 WeatherIcon    weatherIcon(&tft);
-WeatherPanel   weatherPanel(kStatusMargin, 162);   // bottom-left baseline, below the clock
-ForecastPanel  forecastPanel(162, FORECAST_FADE_MS, FORECAST_HOLD_MS);   // shares the bottom baseline
-WindPanel      windPanel(162);   // bottom-right, same baseline
+WeatherPanel   weatherPanel(kStatusMargin);   // bottom-left; baseline passed at render
+ForecastPanel  forecastPanel(FORECAST_FADE_MS, FORECAST_HOLD_MS);   // shares the bottom baseline
+WindPanel      windPanel;   // bottom-right, same baseline
+
+static const int kBottomMargin = 8;   // gap from the bottom edge to the weather baseline
 
 // On-board buttons. OneButton(pin, activeLow, pullupActive): both buttons pull
 // to GND when pressed, so activeLow=true with the internal pull-up enabled.
@@ -144,15 +146,17 @@ static void renderClockView()
 
     // Bottom line: [icon][temperature] ... [rotating forecast] ... [wind].
     // The forecast is centred in the space between the temperature and the wind.
+    // The baseline is anchored to the actual display height, not a fixed pixel row.
+    int baseline      = frame.height() - kBottomMargin;
     int forecastLeft  = kStatusMargin;
     int forecastRight = frame.width() - kStatusMargin;
     if (weather.HasWeather())
     {
-        forecastLeft  = weatherPanel.Render(&frame, weatherIcon, weather.Temperature()) + 12;
+        forecastLeft  = weatherPanel.Render(&frame, weatherIcon, weather.Temperature(), baseline) + 12;
         forecastRight = windPanel.Render(&frame, frame.width() - kStatusMargin,
-                                         weather.WindMph(), weather.WindDegree()) - 12;
+                                         weather.WindMph(), weather.WindDegree(), baseline) - 12;
     }
-    forecastPanel.Render(&frame, weather, forecastLeft, forecastRight);
+    forecastPanel.Render(&frame, weather, forecastLeft, forecastRight, baseline);
 
     drawStatusCluster();
 }

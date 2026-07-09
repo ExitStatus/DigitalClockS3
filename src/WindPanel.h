@@ -9,16 +9,15 @@
 class WindPanel
 {
     public:
-        explicit WindPanel(int baselineY);
+        WindPanel();
 
-        // Right-align the block to rightX; returns the left edge x of what was drawn.
-        int Render(TFT_eSprite* sprite, int rightX, float windMph, int windDegree);
+        // Right-align the block to rightX on baseline baselineY (both passed at
+        // render time); returns the left edge x of what was drawn.
+        int Render(TFT_eSprite* sprite, int rightX, float windMph, int windDegree, int baselineY);
 
     private:
         uint16_t colourForSpeed(TFT_eSprite* sprite, float mph) const;
         void drawArrow(TFT_eSprite* sprite, int cx, int cy, float bearingDeg, int radius, uint16_t colour) const;
-
-        int _y;
 };
 
 #endif // _WIND_PANEL_H

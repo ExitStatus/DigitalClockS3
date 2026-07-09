@@ -2,8 +2,7 @@
 #include "Font.h"
 #include <math.h>
 
-WindPanel::WindPanel(int baselineY)
-    : _y(baselineY)
+WindPanel::WindPanel()
 {
 }
 
@@ -51,7 +50,7 @@ void WindPanel::drawArrow(TFT_eSprite* s, int cx, int cy, float bearingDeg, int 
     s->fillTriangle(tipX, tipY, nX, nY, lbX, lbY, colour);
 }
 
-int WindPanel::Render(TFT_eSprite* sprite, int rightX, float windMph, int windDegree)
+int WindPanel::Render(TFT_eSprite* sprite, int rightX, float windMph, int windDegree, int baselineY)
 {
     sprite->loadFont(gillsans24);   // match the temperature font/size
 
@@ -68,12 +67,12 @@ int WindPanel::Render(TFT_eSprite* sprite, int rightX, float windMph, int windDe
 
     // Arrow points in the direction the wind is blowing towards (wind_degree is
     // the direction it comes from, so add 180), coloured by speed.
-    drawArrow(sprite, startX + arrowRadius, _y - ascent / 2,
+    drawArrow(sprite, startX + arrowRadius, baselineY - ascent / 2,
               windDegree + 180, arrowRadius, colourForSpeed(sprite, windMph));
 
     sprite->setTextColor(TFT_WHITE, TFT_BLACK);
     sprite->setTextDatum(L_BASELINE);
-    sprite->drawString(buffer, startX + arrowBox + gap, _y);
+    sprite->drawString(buffer, startX + arrowBox + gap, baselineY);
 
     return startX;
 }

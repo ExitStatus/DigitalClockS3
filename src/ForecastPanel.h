@@ -11,13 +11,13 @@
 class ForecastPanel
 {
     public:
-        ForecastPanel(int baselineY, uint32_t fadeMs, uint32_t holdMs);
+        ForecastPanel(uint32_t fadeMs, uint32_t holdMs);
 
         void Update();                 // advance the cycle/fade state
         bool Animating() const;        // true while fading (needs frequent redraws)
 
         void Render(TFT_eSprite* sprite, const WeatherApi& weather,
-                    int leftBound, int rightBound);
+                    int leftBound, int rightBound, int baselineY);
 
     private:
         int  alphaNow() const;         // current fade level, 0..255
