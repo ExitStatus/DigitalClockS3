@@ -78,7 +78,7 @@ SignalBars     signalBars(kSignalWidth, kSignalHeight);
 NtpClient      ntp;
 WeatherApi     weather(WEATHER_API_KEY, LOCATION_LAT, LOCATION_LON, kWeatherFields);
 DatePanel      datePanel(kStatusMargin, kStatusMargin + kStatusHeight / 2);   // left, centred on the icon row
-TimePanel      timePanel;
+TimePanel      timePanel(CLOCK_USE_24_HOUR);
 WeatherIcon    weatherIcon(&tft);
 WeatherPanel   weatherPanel(kStatusMargin);   // bottom-left; baseline passed at render
 ForecastPanel  forecastPanel(FORECAST_FADE_MS, FORECAST_HOLD_MS, kForecastStats);   // shares the bottom baseline

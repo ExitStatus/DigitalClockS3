@@ -121,6 +121,8 @@ falling back to a default.
 
 ```ini
 [settings]
+time_format = 12                   ; 12 | 24
+
 weather_temp_field = feelslike     ; temp | feelslike
 temperature_unit   = c             ; c | f
 wind_unit          = mph           ; mph | kph
@@ -138,6 +140,13 @@ forecast_stat_wind     = on        ; on | off
 forecast_fade_ms   = 1000
 forecast_hold_ms   = 8000
 ```
+
+#### Clock
+
+- **`time_format`** — `12` or `24`. In 12-hour mode the hour drops its leading
+  zero and an AM/PM superscript sits to the right of the time. In 24-hour mode
+  the hour is zero-padded (`09:05`) and the superscript disappears, so `HH:MM`
+  centres on its own.
 
 #### Units
 

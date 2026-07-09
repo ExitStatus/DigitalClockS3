@@ -25,6 +25,9 @@
 #define UNIT_mb    51
 #define UNIT_inhg  52
 
+#define FMT_12     61
+#define FMT_24     62
+
 // True when a settings.ini on/off switch is on.
 #define ENABLED(x) ((x) == SW_on)
 
@@ -40,6 +43,10 @@
 
 #if PRESSURE_UNIT != UNIT_mb && PRESSURE_UNIT != UNIT_inhg
 #error "settings.ini: pressure_unit must be 'mb' or 'inhg'"
+#endif
+
+#if TIME_FORMAT != FMT_12 && TIME_FORMAT != FMT_24
+#error "settings.ini: time_format must be '12' or '24'"
 #endif
 
 #if !ENABLED(GRAPH_TEMPERATURE) && GRAPH_TEMPERATURE != SW_off
@@ -67,6 +74,10 @@
 #if !ENABLED(FORECAST_STAT_WIND) && FORECAST_STAT_WIND != SW_off
 #error "settings.ini: forecast_stat_wind must be 'on' or 'off'"
 #endif
+
+// ---- Clock ----------------------------------------------------------------
+
+#define CLOCK_USE_24_HOUR (TIME_FORMAT == FMT_24)
 
 // ---- Temperature ----------------------------------------------------------
 
