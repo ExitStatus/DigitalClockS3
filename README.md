@@ -15,13 +15,15 @@ no filesystem to prepare.
 
 **Clock page**
 
-- Large seven-segment `HH:MM` with an `AM`/`PM` superscript.
+- Large seven-segment `HH:MM` with an `AM`/`PM` superscript and a colon that
+  blinks once a second.
 - Date (top-left), WiFi signal-strength bars (top-right). The bars become a red
   X whenever the link is down, so an outage is distinct from a weak signal.
 - Weather strip along the bottom: condition icon + temperature, a rotating
   forecast stat that fades in and out, and a wind arrow + speed.
-- Time is synced from NTP once an hour and free-runs from the internal
-  clock in between; the display repaints once a minute.
+- Time is synced from NTP once an hour and free-runs from the internal clock in
+  between. The display repaints each second to blink the colon, or once a minute
+  if `blink_colon` is off.
 
 **Forecast graph pages** — each a smooth, colour-coded line graph of the hourly
 forecast for **today + tomorrow**, with a temperature/value scale, hour-of-day
@@ -123,6 +125,7 @@ falling back to a default.
 ```ini
 [settings]
 time_format = 12                   ; 12 | 24
+blink_colon = on                   ; on | off
 
 weather_temp_field = feelslike     ; temp | feelslike
 temperature_unit   = c             ; c | f
@@ -148,6 +151,11 @@ forecast_hold_ms   = 8000
   zero and an AM/PM superscript sits to the right of the time. In 24-hour mode
   the hour is zero-padded (`09:05`) and the superscript disappears, so `HH:MM`
   centres on its own.
+- **`blink_colon`** — `on` (the default) or `off`. On blinks the `:` between the
+  hours and minutes: lit on even seconds, dark on odd, so a full cycle takes two
+  seconds. Off leaves it lit permanently. Note that the clock page would
+  otherwise repaint only on the minute rollover; blinking makes it repaint every
+  second, which is the cost of the effect.
 
 #### Units
 

@@ -78,7 +78,7 @@ SignalBars     signalBars(kSignalWidth, kSignalHeight);
 NtpClient      ntp;
 WeatherApi     weather(WEATHER_API_KEY, LOCATION_LAT, LOCATION_LON, kWeatherFields);
 DatePanel      datePanel(kStatusMargin, kStatusMargin + kStatusHeight / 2);   // left, centred on the icon row
-TimePanel      timePanel(CLOCK_USE_24_HOUR);
+TimePanel      timePanel(CLOCK_USE_24_HOUR, CLOCK_BLINK_COLON);
 WeatherIcon    weatherIcon(&tft);
 WeatherPanel   weatherPanel(kStatusMargin);   // bottom-left; baseline passed at render
 ForecastPanel  forecastPanel(FORECAST_FADE_MS, FORECAST_HOLD_MS, kForecastStats);   // shares the bottom baseline
@@ -129,6 +129,10 @@ static int      weatherIconHeight = 22;   // set from the temperature font in se
 // Minute-of-day of the last rendered frame (0..1439, or -1 when the time is
 // unknown). Starts at -2 so the very first loop() always paints one frame.
 static int       lastRenderedMinute = -2;
+
+// Second-of-minute of the last rendered frame, tracked only when the colon
+// blinks (that is the one thing on the clock page that changes within a minute).
+static int       lastRenderedSecond = -2;
 
 static WifiState lastRenderedState  = WifiState::Idle;
 static bool      lastOverlayActive  = false;   // was the brightness HUD visible last frame
@@ -301,12 +305,21 @@ void loop()
 
     forecastPanel.Update();      // advance the rotating-stat fade state
 
-    // Current minute-of-day, or -1 while the clock has not synced yet.
+    // Current minute-of-day and second, or -1 while the clock has not synced yet.
     struct tm now;
-    int  minuteNow     = ntp.GetTime(now) ? (now.tm_hour * 60 + now.tm_min) : -1;
+    bool haveTime      = ntp.GetTime(now);
+    int  minuteNow     = haveTime ? (now.tm_hour * 60 + now.tm_min) : -1;
+    int  secondNow     = haveTime ? now.tm_sec : -1;
     bool minuteChanged = (minuteNow != lastRenderedMinute);
     bool stateChanged  = (wifi.State() != lastRenderedState);
     bool fading        = (currentView() == View::Clock) && forecastPanel.Animating() && fastTick.Ready();
+
+    // A blinking colon is the only sub-minute change on the clock page, so it
+    // needs its own repaint each second. CLOCK_BLINK_COLON is a compile-time
+    // constant: with it off, this folds away and the minute cadence stands.
+    bool blinkTick = CLOCK_BLINK_COLON
+                  && (currentView() == View::Clock)
+                  && (secondNow != lastRenderedSecond);
 
     // Repaint when the brightness HUD appears/updates (TakeDirty) or when it
     // expires (active -> inactive), so it is drawn and later cleared exactly once.
@@ -315,12 +328,14 @@ void loop()
     bool viewChanged    = (currentView() != lastRenderedView);
 
     // The clock only changes once a minute, so repaint on the minute rollover
-    // and on WiFi state changes; also at ~20 fps while the forecast fades, and
-    // whenever the page or brightness HUD changes.
-    if (minuteChanged || stateChanged || fading || overlayChanged || viewChanged)
+    // and on WiFi state changes; also once a second while the colon blinks, at
+    // ~20 fps while the forecast fades, and whenever the page or brightness HUD
+    // changes.
+    if (minuteChanged || stateChanged || fading || overlayChanged || viewChanged || blinkTick)
     {
         renderFrame();
         lastRenderedMinute = minuteNow;
+        lastRenderedSecond = secondNow;
         lastRenderedState  = wifi.State();
         lastOverlayActive  = overlayActive;
         lastRenderedView   = currentView();
