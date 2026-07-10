@@ -4,6 +4,7 @@
 
 #include "Config.h"
 #include "Font.h"
+#include "Icon.h"
 #include "Interval.h"
 #include "DatePanel.h"
 #include "NtpClient.h"
@@ -60,6 +61,7 @@ static const int kStatusMargin  = 6;    // gap from top/right edges
 static const int kStatusHeight  = 24;   // height of the status row
 static const int kSignalWidth   = 22;   // width of the signal bar graph
 static const int kSignalHeight  = 18;   // height of the signal bar graph
+static const int kStatusGap     = 6;    // gap between items in the status row
 
 // Which JSON fields WeatherAPI is asked for, and hence the units everything
 // downstream carries. Derived from settings.ini via Config.h.
@@ -158,6 +160,7 @@ static int       lastRenderedSecond = -2;
 static WifiState lastRenderedState  = WifiState::Idle;
 static bool      lastOverlayActive  = false;   // was the brightness HUD visible last frame
 static View      lastRenderedView   = View::Clock;
+static bool      lastNetBusy        = false;   // was the download arrow visible last frame
 
 static void initDisplay()
 {
@@ -189,7 +192,20 @@ static void initFrame()
     frame.createSprite(tft.width(), tft.height());
 }
 
-// WiFi signal strength bar graph, top-right; an X while the link is down.
+// True while anything is being fetched over WiFi: the weather worker (current
+// conditions, forecast, icon), the news worker, or an NTP sync awaiting a reply.
+static bool networkBusy()
+{
+    return weather.Busy()
+        || ntp.Busy()
+#if NEWS_ENABLED
+        || news.Busy()
+#endif
+        ;
+}
+
+// WiFi signal strength bar graph, top-right; an X while the link is down. While
+// a fetch is in flight a download arrow sits to its left.
 static void drawStatusCluster()
 {
     int barsX = frame.width() - kStatusMargin - kSignalWidth;
@@ -199,6 +215,16 @@ static void drawStatusCluster()
         signalBars.Render(&frame, barsX, barsY, wifi.SignalPercent());
     else
         signalBars.RenderNoLink(&frame, barsX, barsY);
+
+    if (networkBusy())
+    {
+        // Native size, so it fills the status row and stands a little proud of
+        // the shorter bars. Blended rather than masked: at 24 px the icon is
+        // mostly edge, and a 1-bit mask would make it look ragged.
+        int iconX = barsX - kStatusGap - DownIcon.Width();
+        int iconY = kStatusMargin + (kStatusHeight - DownIcon.Height()) / 2;
+        DownIcon.RenderHighQuality(&frame, iconX, iconY);
+    }
 }
 
 // The default page: live clock, date, weather, and status cluster.
@@ -389,15 +415,23 @@ void loop()
     bool overlayChanged = brightnessOverlay.TakeDirty() || (overlayActive != lastOverlayActive);
     bool viewChanged    = (currentView() != lastRenderedView);
 
+    // A fetch can begin and end between two minute rollovers, so the download
+    // arrow needs a trigger of its own, or it would appear and clear late -- or,
+    // with the colon not blinking, never be seen at all.
+    bool netBusy        = networkBusy();
+    bool netBusyChanged = (netBusy != lastNetBusy);
+
     // The clock only changes once a minute, so repaint on the minute rollover
     // and on WiFi state changes; also once a second while the colon blinks, at
     // ~20 fps while the forecast fades or a headline scrolls, and whenever the
-    // page or brightness HUD changes.
-    if (minuteChanged || stateChanged || animTick || overlayChanged || viewChanged || blinkTick)
+    // page, the brightness HUD, or the download arrow changes.
+    if (minuteChanged || stateChanged || animTick || overlayChanged || viewChanged
+        || blinkTick || netBusyChanged)
     {
         renderFrame();
         lastRenderedMinute = minuteNow;
         lastRenderedSecond = secondNow;
+        lastNetBusy        = netBusy;
         lastRenderedState  = wifi.State();
         lastOverlayActive  = overlayActive;
         lastRenderedView   = currentView();

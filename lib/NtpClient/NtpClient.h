@@ -25,6 +25,14 @@ class NtpClient
         bool HasTime() const { return _hasTime; }
         bool GetTime(struct tm& out) const;   // true and fills 'out' if time is known
 
+        // True between asking SNTP for the time and hearing back. Unlike the
+        // weather and news fetches there is no call to sit inside: configTzTime()
+        // hands off to a background poller and returns at once, so this tracks a
+        // completion callback instead. A sync that never answers is given up on
+        // after kSyncTimeoutMs, otherwise an unreachable server would leave the
+        // indicator stuck on forever.
+        bool Busy() const { return _syncPending; }
+
     private:
         void requestSync();
         void applyTimezone();   // setenv(TZ) + tzset()
@@ -42,9 +50,15 @@ class NtpClient
         Interval _retry;     // 10 s between attempts while waiting for first sync
         Interval _refresh;   // 1 hour between refreshes once synced
 
+        bool     _syncPending = false;   // a sync was asked for; no answer yet
+        uint32_t _syncStart = 0;         // millis() when it was asked for
+
         // Epoch (seconds) below which the clock is considered "not yet set".
         // 1700000000 = 2023-11-14, safely after any real sync, before now.
         static const time_t kValidEpoch = 1700000000;
+
+        // How long to keep showing a sync as in flight before writing it off.
+        static const uint32_t kSyncTimeoutMs = 15000;
 };
 
 #endif // _NTP_CLIENT_H

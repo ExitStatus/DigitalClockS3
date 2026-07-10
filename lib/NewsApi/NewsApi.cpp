@@ -248,7 +248,9 @@ void NewsApi::taskLoop()
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
         Batch result;
+        _fetching = true;
         result.ok = fetch(result);
+        _fetching = false;
 
         xSemaphoreTake(_lock, portMAX_DELAY);
         _staged  = result;

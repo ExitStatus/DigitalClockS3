@@ -80,6 +80,12 @@ class WeatherApi
         // fetches run exactly as they did before.
         void SetNetworkLock(SemaphoreHandle_t lock) { _netLock = lock; }
 
+        // True while the worker has a fetch in flight, including the time spent
+        // waiting for the network lock. A plain bool rather than a locked read:
+        // it is one aligned word, written by the worker and read by the loop
+        // thread, and a value one frame stale costs nothing here.
+        bool Busy() const { return _fetching; }
+
         // False while there has never been a successful fetch, or once the last
         // successful fetch is older than the staleness window (so stale data is
         // not displayed). Becomes true again as soon as a fresh fetch succeeds.
@@ -202,6 +208,9 @@ class WeatherApi
         // as _lock. Lock order is netLock first, then _lock, always released
         // before the other is taken -- so no cycle exists to deadlock on.
         SemaphoreHandle_t _netLock = nullptr;
+
+        // Written by the worker, read by the loop thread. See Busy().
+        volatile bool _fetching = false;
 
         // ---- shared between the caller and the worker, guarded by _lock ------
         // Held only for the handover: a few words in dispatch(), a struct copy in

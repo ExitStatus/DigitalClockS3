@@ -34,6 +34,11 @@ class NewsApi
         void Begin(SemaphoreHandle_t netLock);
         void Update(bool wifiConnected);
 
+        // True while the worker has a fetch in flight, including the time spent
+        // waiting for the network lock. See WeatherApi::Busy() for why this needs
+        // no locking.
+        bool Busy() const { return _fetching; }
+
         bool HasHeadline() const { return _head < _count; }
 
         // The oldest headline not yet shown, or nullptr. Valid until MarkShown().
@@ -103,6 +108,9 @@ class NewsApi
         // _lock. A live WiFiClientSecure costs tens of KB of heap; this is what
         // guarantees only one exists at a time across the whole firmware.
         SemaphoreHandle_t _netLock = nullptr;
+
+        // Written by the worker, read by the loop thread. See Busy().
+        volatile bool _fetching = false;
 
         // Worker-only: the watermark as it stood when the fetch was dispatched.
         uint32_t _since = 0;
