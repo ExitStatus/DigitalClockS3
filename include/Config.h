@@ -92,6 +92,21 @@
 #error "settings.ini: forecast_stat_wind must be 'on' or 'off'"
 #endif
 
+#if !ENABLED(NEWS) && NEWS != SW_off
+#error "settings.ini: news must be 'on' or 'off'"
+#endif
+#if NEWS_INTERVAL_MINUTES < 1
+#error "settings.ini: news_interval_minutes must be at least 1"
+#endif
+#if NEWS_DISPLAY_SPEED < 10 || NEWS_DISPLAY_SPEED > 200
+#error "settings.ini: news_display_speed must be 10..200 pixels per second"
+#endif
+#if NEWS_MAX_ITEMS < 1 || NEWS_MAX_ITEMS > 10
+#error "settings.ini: news_max_items must be 1..10"
+#endif
+// news_country is a string, so #if cannot check it; NewsApi.cpp static_asserts
+// its length instead.
+
 // ---- Clock ----------------------------------------------------------------
 
 #define CLOCK_USE_24_HOUR   (TIME_FORMAT == FMT_24)
@@ -105,6 +120,11 @@
 
 #define SEGMENT_ACTIVE_COLOUR    RGB565(SEGMENT_ACTIVE_RGB)
 #define SEGMENT_INACTIVE_COLOUR  RGB565(SEGMENT_INACTIVE_RGB)
+
+// ---- News -----------------------------------------------------------------
+
+#define NEWS_ENABLED         ENABLED(NEWS)
+#define NEWS_INTERVAL_MS     (NEWS_INTERVAL_MINUTES * 60000UL)
 
 // ---- Temperature ----------------------------------------------------------
 

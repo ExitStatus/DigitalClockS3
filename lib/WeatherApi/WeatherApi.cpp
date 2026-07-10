@@ -6,6 +6,33 @@
 #include <ArduinoJson.h>
 #include <math.h>
 
+namespace
+{
+    // Holds the network lock for a whole fetch, releasing it however the fetch
+    // returns -- and there are several early returns to get wrong by hand.
+    //
+    // The scope has to be the entire function, not just the HTTP call: the
+    // WiFiClientSecure is a local, so its TLS buffers are alive until the
+    // function returns. Releasing any sooner would let a second session overlap
+    // the tail of this one, which is the whole thing the lock exists to prevent.
+    struct NetGuard
+    {
+        explicit NetGuard(SemaphoreHandle_t lock) : _lock(lock)
+        {
+            if (_lock) xSemaphoreTake(_lock, portMAX_DELAY);
+        }
+        ~NetGuard()
+        {
+            if (_lock) xSemaphoreGive(_lock);
+        }
+
+        NetGuard(const NetGuard&) = delete;
+        NetGuard& operator=(const NetGuard&) = delete;
+
+        SemaphoreHandle_t _lock;
+    };
+}
+
 WeatherApi::WeatherApi(const char* apiKey, double lat, double lon, const WeatherFields& fields)
     : _apiKey(apiKey), _fields(fields),
       _lat(String(lat, 4)),          // fixed location, no geocoding needed
@@ -217,6 +244,10 @@ void WeatherApi::taskLoop()
 
 bool WeatherApi::fetchWeather(WeatherResult& out)
 {
+    // Covers downloadIcon() too, which is only ever called from here -- so that
+    // function must not take the lock itself; the mutex is not recursive.
+    NetGuard guard(_netLock);
+
     String url = "https://api.weatherapi.com/v1/current.json?key=" + String(_apiKey) +
                  "&q=" + _lat + "," + _lon;
     DPRINTLN("WeatherApi: fetching weather");
@@ -326,6 +357,8 @@ static void parseDay(JsonArrayConst hours, DayForecast& out, const WeatherFields
 
 bool WeatherApi::fetchForecast(ForecastResult& out)
 {
+    NetGuard guard(_netLock);
+
     String url = "https://api.weatherapi.com/v1/forecast.json?key=" + String(_apiKey) +
                  "&q=" + _lat + "," + _lon + "&days=2";
     DPRINTLN("WeatherApi: fetching forecast");

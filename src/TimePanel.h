@@ -19,23 +19,34 @@
 // With blinkColon set, the colon lights on even seconds and goes dark on odd
 // ones. It follows the seconds it is handed rather than a timer of its own, so
 // the caller must repaint every second for the blink to be seen.
+//
+// The digits are drawn to fit a vertical region, centred in it, at whatever size
+// that allows up to their full height. Handing over the region rather than a
+// scale factor keeps the arithmetic in one place: the news ticker shrinks the
+// clock simply by passing a shorter region, and interpolating the region across
+// frames animates the shrink. A region as tall as the sprite reproduces the
+// original full-size, screen-centred layout exactly.
 class TimePanel
 {
     public:
         TimePanel(bool use24Hour, bool blinkColon,
                   uint16_t activeColour, uint16_t inactiveColour);
 
-        void Render(TFT_eSprite* sprite, const struct tm& time);
-        void RenderUnknown(TFT_eSprite* sprite);   // ghost placeholder before the clock syncs
+        void Render(TFT_eSprite* sprite, const struct tm& time, int topLimit, int bottomLimit);
+        // Ghost placeholder before the clock syncs.
+        void RenderUnknown(TFT_eSprite* sprite, int topLimit, int bottomLimit);
+
+        // Full-height digits; the size everything else is measured against.
+        static const int kFullHeight = 80;
 
     private:
         void draw(TFT_eSprite* sprite,
                   int h0, int h1, int m0, int m1,
-                  const char* ampm, bool colonLit);
+                  const char* ampm, bool colonLit,
+                  int topLimit, int bottomLimit);
 
         bool colonLit(const struct tm& time) const;
 
-        SevenSegment _big;     // HH:MM
         bool _use24Hour;
         bool _blinkColon;
         uint16_t _active;      // lit segments
