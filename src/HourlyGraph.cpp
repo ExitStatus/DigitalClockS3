@@ -26,7 +26,7 @@ uint16_t graphColourRamp(TFT_eSprite* s, int x, const ColourStop* st, int n)
 
 void drawGraphMessage(TFT_eSprite* s, const char* text)
 {
-    s->loadFont(gillsans20);
+    s->loadFont(cabin17);
     s->setTextColor(TFT_WHITE, TFT_BLACK);
     s->setTextDatum(MC_DATUM);
     s->drawString(text, s->width() / 2, s->height() / 2);
@@ -155,7 +155,7 @@ void renderHourlyGraph(TFT_eSprite* s, const int* vals, int count,
     // --- Y axis: gridlines + labels (drawn behind the line) ---
     int step = niceStep(hiScale - loScale, 4);
     int firstTick = (int)ceil((double)loScale / step) * step;
-    s->loadFont(gillsans12);
+    s->loadFont(cabin11);
     s->setTextColor(s->color565(150, 150, 150), TFT_BLACK);
     s->setTextDatum(MR_DATUM);
     for (int v = firstTick; v <= hiScale; v += step)
@@ -184,7 +184,7 @@ void renderHourlyGraph(TFT_eSprite* s, const int* vals, int count,
         s->drawFastVLine(divX, y, 2, s->color565(90, 90, 96));
 
     // --- X axis: hour-of-day ticks + labels every 6 h ---
-    s->loadFont(gillsans12);
+    s->loadFont(cabin11);
     s->setTextColor(s->color565(150, 150, 150), TFT_BLACK);
     s->setTextDatum(TC_DATUM);
     for (int d = 0; d < 2; d++)
@@ -221,13 +221,13 @@ void renderHourlyGraph(TFT_eSprite* s, const int* vals, int count,
     }
 
     // Title across the very top.
-    s->loadFont(gillsans16);
+    s->loadFont(cabin12);
     s->setTextColor(TFT_WHITE, TFT_BLACK);
     s->setTextDatum(TC_DATUM);
     s->drawString(spec.title, s->width() / 2, 2);
 
     // Date labels centred over each day's region.
-    s->loadFont(gillsans14);
+    s->loadFont(cabin12);
     s->setTextColor(s->color565(200, 200, 200), TFT_BLACK);
     s->setTextDatum(TC_DATUM);
     int dateY = 21;
@@ -235,7 +235,7 @@ void renderHourlyGraph(TFT_eSprite* s, const int* vals, int count,
     s->drawString(dayLabel1, plotLeft + (int)(((n0 + count - 1) / 2.0f) * plotW / span), dateY);
 
     // Y-axis unit marker, top-left of the axis.
-    s->loadFont(gillsans12);
+    s->loadFont(cabin11);
     s->setTextColor(s->color565(150, 150, 150), TFT_BLACK);
     s->setTextDatum(L_BASELINE);
     if (spec.degreeUnit)
@@ -261,7 +261,7 @@ void renderHourlyGraph(TFT_eSprite* s, const int* vals, int count,
         s->fillRect(lx, ly, lw, lh, boxBg);
         s->drawRect(lx, ly, lw, lh, s->color565(70, 70, 74));
 
-        s->loadFont(gillsans12);
+        s->loadFont(cabin11);
         s->setTextDatum(TL_DATUM);
         s->fillRect(lx + 6, ly + 8, 14, 3, c1);
         s->setTextColor(c1, boxBg);

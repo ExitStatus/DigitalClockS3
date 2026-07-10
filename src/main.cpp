@@ -336,9 +336,11 @@ void setup()
     initSerialForDebug();
     initFrame();
 
-    // Size the weather icon to 20% taller than the temperature digits (Gill Sans 24).
-    frame.loadFont(gillsans24);
-    weatherIconHeight = frame.gFont.maxAscent * 6 / 5;
+    // Size the weather icon to the temperature digits' ascent. (The smooth font
+    // reports a taller ascent than the seven-segment digit height, so the former
+    // 6/5 multiplier overshot and left the icon standing proud of the digits.)
+    frame.loadFont(cabin21);
+    weatherIconHeight = frame.gFont.maxAscent;
 
     // Decode the embedded icons once. Globals cannot do this in their
     // constructors: it allocates, and the heap is not ready that early.

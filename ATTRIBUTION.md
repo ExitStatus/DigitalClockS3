@@ -20,9 +20,16 @@ distributed as a separate file.
 
 ## Fonts
 
-The `.vlw` fonts under `fonts/` are bitmap conversions of Arial and Gill Sans,
-generated for TFT_eSPI. They are embedded into the firmware. Check the licensing
-of these typefaces before redistributing a build.
+The `.vlw` fonts under `fonts/` are all **Cabin**, by Pablo Impallari, Rodrigo
+Fuenzalida and Igino Marini, embedded into the firmware.
+
+- **Source:** [Cabin on Google Fonts](https://fonts.google.com/specimen/Cabin)
+  ([github.com/impallari/Cabin](https://github.com/impallari/Cabin))
+- **License:** [SIL Open Font License 1.1](https://openfontlicense.org/) — free
+  to use, embed, and modify; embedding imposes no licence on this project.
+- Files are named `cabin<N>` for the pixel size each was generated at. See
+  [`fonts/README.md`](fonts/README.md) for how they are produced (with
+  [vlwconv](https://github.com/jdlr-au/vlwconv), MIT).
 
 ## Libraries
 

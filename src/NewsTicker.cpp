@@ -146,7 +146,7 @@ void NewsTicker::RenderBand(TFT_eSprite* sprite)
     if (_phase != Phase::Scrolling)
         return;   // the band is open but empty while the digits are still moving
 
-    sprite->loadFont(gillsans24);
+    sprite->loadFont(cabin21);
     sprite->setTextColor(TFT_WHITE, TFT_BLACK);
     sprite->setTextDatum(L_BASELINE);
 

@@ -292,7 +292,7 @@ settings.ini        User-tunable settings (committed)
 secrets.ini         Your WiFi/API key/location (gitignored; copy from the example)
 secrets.ini.example Template for secrets.ini
 include/            Shared headers (Config.h, Debug.h, Font.h)
-fonts/              Embedded .vlw fonts (Arial, Gill Sans)
+fonts/              Embedded .vlw smooth fonts (Cabin; see fonts/README.md)
 images/             Embedded .png icons (see ATTRIBUTION.md)
 lib/
   WifiManager/      Non-blocking WiFi station manager with reconnect/escalation

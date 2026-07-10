@@ -50,7 +50,7 @@ void BrightnessOverlay::Render(TFT_eSprite* s)
     // Percentage, centred near the top of the panel.
     char buf[8];
     snprintf(buf, sizeof(buf), "%d%%", _percent);
-    s->loadFont(gillsans24);
+    s->loadFont(cabin21);
     s->setTextColor(TFT_WHITE, bg);       // bg matches the panel for clean anti-aliasing
     s->setTextDatum(TC_DATUM);
     s->drawString(buf, x + W / 2, y + 12);
