@@ -215,8 +215,10 @@ void WeatherApi::taskLoop()
             WeatherResult  weather;
             ForecastResult forecast;
 
+            _fetching = true;
             if (request & ReqWeather)  weather.ok  = fetchWeather(weather);
             if (request & ReqForecast) forecast.ok = fetchForecast(forecast);
+            _fetching = false;
 
             xSemaphoreTake(_lock, portMAX_DELAY);
             if (request & ReqWeather)
