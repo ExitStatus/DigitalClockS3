@@ -216,14 +216,13 @@ static void drawStatusCluster()
     else
         signalBars.RenderNoLink(&frame, barsX, barsY);
 
-    if (networkBusy())
+    if (networkBusy() && DownIcon.Ready())
     {
         // Native size, so it fills the status row and stands a little proud of
-        // the shorter bars. Blended rather than masked: at 24 px the icon is
-        // mostly edge, and a 1-bit mask would make it look ragged.
+        // the shorter bars.
         int iconX = barsX - kStatusGap - DownIcon.Width();
         int iconY = kStatusMargin + (kStatusHeight - DownIcon.Height()) / 2;
-        DownIcon.RenderHighQuality(&frame, iconX, iconY);
+        DownIcon.Render(&frame, iconX, iconY);
     }
 }
 
@@ -340,6 +339,10 @@ void setup()
     // Size the weather icon to 20% taller than the temperature digits (Gill Sans 24).
     frame.loadFont(gillsans24);
     weatherIconHeight = frame.gFont.maxAscent * 6 / 5;
+
+    // Decode the embedded icons once. Globals cannot do this in their
+    // constructors: it allocates, and the heap is not ready that early.
+    DownIcon.Prepare();   // native size
 
     button1.attachClick(onButton1Click);
     button2.attachClick(onButton2Click);

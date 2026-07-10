@@ -6,47 +6,70 @@
 #include <PNGdec.h>
 #include <TFT_eSPI.h>
 
-// A PNG held in flash and drawn with its transparency respected: the alpha
-// channel becomes a mask, and only the set runs of each line are pushed, so the
-// background shows through instead of being painted black.
+// A PNG, decoded once and drawn with its transparency intact.
 //
-// This differs from WeatherIcon, which decodes a *downloaded* PNG into a sprite
-// of its own, trims it and rescales it. An Icon is fixed, embedded at build
-// time, and drawn at its native size straight into the destination.
+// Prepare() decodes the image, trims the fully transparent border away, scales
+// what is left to a requested height, and keeps the result as two arrays: the
+// colour of each pixel, and its alpha. Render() then blends those over whatever
+// is already in the destination sprite.
 //
-// Ported from the WeatherS3 project. Two changes were needed here: it shares
-// WeatherIcon's PNG decoder rather than creating a second one (the object is
-// ~40 KB, and two would not fit), and only the images this project actually
-// embeds are declared.
+// Two details worth knowing:
+//
+//   * The crop keys off the alpha channel, not off blackness. Trimming "black"
+//     pixels would eat an icon's own dark outline.
+//   * Scaling averages premultiplied colour, so a pixel that is half covered
+//     contributes half as much colour as it does alpha. Averaging plain RGB
+//     would drag the edge toward whatever the transparent pixels happen to hold.
+//
+// Alpha is kept rather than composited against black at decode time, so an icon
+// is correct over any background, not just a black one.
+//
+// The source may be in flash (embedded via board_build.embed_files) or in RAM (a
+// download). A RAM source must stay alive only for the duration of Prepare().
 class Icon
 {
-    private:
-        uint8_t* _imageStart;
-        uint8_t* _imageEnd;
-        uint16_t _imageWidth = 0;
-        uint16_t _imageHeight = 0;
-
     public:
-        Icon(const uint8_t* start, const uint8_t* end);
+        Icon() = default;
+        Icon(const uint8_t* start, const uint8_t* end);   // embedded image
+        ~Icon();
 
-        void Render(int x, int y);                        // straight to the panel
-        void Render(TFT_eSprite* sprite, int x, int y);   // into an offscreen sprite
+        Icon(const Icon&) = delete;
+        Icon& operator=(const Icon&) = delete;
 
-        // As Render(), but soft-edged. Render() masks each pixel in or out at a
-        // threshold, so a partially transparent pixel is simply dropped and the
-        // icon gets a hard, jagged rim. This reads each destination pixel and
-        // alpha-blends the source over it, so the antialiased edge survives.
-        //
-        // Slower -- it works a pixel at a time and reads back from the sprite --
-        // so it is worth it for a small icon, not for a large image.
-        void RenderHighQuality(TFT_eSprite* sprite, int x, int y);
+        // Point at a PNG held in RAM. Does not decode; call Prepare() next.
+        bool LoadFromRam(const uint8_t* png, size_t len);
 
-        uint16_t Width();
-        uint16_t Height();
+        // Decode, crop and scale. targetHeight <= 0 keeps the cropped size.
+        // Safe to call again to re-scale, or after LoadFromRam() for a new image.
+        bool Prepare(int targetHeight = 0);
+
+        // Alpha-blend the cached pixels over the destination.
+        void Render(TFT_eSprite* dest, int x, int y) const;
+
+        bool     Ready() const  { return _ready; }
+        uint16_t Width() const  { return _w; }
+        uint16_t Height() const { return _h; }
+
+    private:
+        void freeCache();
+
+        const uint8_t* _data = nullptr;
+        size_t         _len = 0;
+        bool           _inFlash = false;
+
+        uint16_t* _pixels = nullptr;   // _w * _h, RGB565
+        uint8_t*  _alpha = nullptr;    // _w * _h, 0..255
+        uint16_t  _w = 0;
+        uint16_t  _h = 0;
+        bool      _ready = false;
+
+        // A decoded source image is held whole and briefly, at 3 bytes a pixel.
+        // 128x128 is 48 KB, which is already generous for an icon.
+        static const int kMaxSourceSide = 128;
 };
 
 // Shown while a fetch is in flight. images/down.png, embedded by
-// board_build.embed_files in platformio.ini.
+// board_build.embed_files in platformio.ini. Prepare() it before first use.
 extern Icon DownIcon;
 
 #endif // _ICON_H
