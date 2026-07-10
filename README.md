@@ -5,6 +5,11 @@ A WiFi-connected digital clock and weather station for the **LilyGo T-Display-S3
 accurate over NTP, scrolling news headlines, and a set of two-day
 weather-forecast graphs you can page through with the on-board buttons.
 
+![The clock page running on the T-Display-S3: a large seven-segment time with the
+unlit segments ghosted, the date top-left, WiFi signal bars top-right, and a
+weather line along the bottom showing temperature, forecast wind, and current
+wind speed.](docs/screen.jpg)
+
 Everything is rendered into a single off-screen buffer and blitted in one pass,
 so the display is flicker-free. Fonts and icons are embedded into the firmware,
 so there's no filesystem to prepare.
@@ -34,22 +39,64 @@ is in flight.
   between. The display repaints each second to blink the colon, or once a minute
   if `blink_colon` is off.
 
-**Forecast graph pages** — each a smooth, colour-coded line graph of the hourly
-forecast for **today + tomorrow**, with a temperature/value scale, hour-of-day
-ticks, a day divider, and dated headers:
+**Forecast graph pages**
 
-1. **Predicted Temperature**
-2. **Predicted Air Pressure**
-3. **Predicted Wind Speed** — two lines, wind and gust, with a legend
-4. **Predicted Chance of Rain**
-5. **Predicted Chance of Snow**
+The **KEY** button pages through five graphs, each a smooth line of the hourly
+forecast across **today and tomorrow**. They share one frame: a value scale down
+the left, hour-of-day ticks along the bottom, a dashed divider at midnight, and a
+dated header over each day. Every graph auto-scales its axis to the data in view,
+so a flat day and a stormy one both fill the height. A graph turned off in
+`settings.ini` is compiled out and skipped in the cycle.
+
+### Predicted Temperature
+
+The apparent ("feels like") temperature hour by hour, in °C or °F. The line is
+tinted by its own value — cooler low, warmer high — so the shape of the day reads
+at a glance.
+
+![Predicted Temperature graph: a line rising from about 20°C overnight to a
+mid-30s afternoon peak on each of the two days.](docs/graph-temperature.jpg)
+
+### Predicted Air Pressure
+
+Sea-level pressure in millibars or inches of mercury. A steady rise (as here)
+suggests settling weather; a fall, the opposite.
+
+![Predicted Air Pressure graph: a line climbing gradually from about 1015 mb to
+1025 mb across the two days.](docs/graph-pressure.jpg)
+
+### Predicted Wind Speed
+
+Two lines — sustained **wind** and **gust** — with a legend, in mph or kph.
+
+![Predicted Wind Speed graph: two lines, wind and gust, tracking each other
+between roughly 5 and 22 mph, with a legend top-right.](docs/graph-wind.jpg)
+
+### Predicted Chance of Rain
+
+Hourly probability of rain as a percentage. The axis fits the range on show — here
+a dry spell with a peak around 20% overnight.
+
+![Predicted Chance of Rain graph: mostly low with a single peak reaching about
+20% in the early hours of the second day.](docs/graph-rain.jpg)
+
+### Predicted Chance of Snow
+
+The same, for snow — flat at 0% on a July forecast, and the reason the graph is a
+compile-time option rather than always on.
+
+![Predicted Chance of Snow graph: a flat line along 0% across both
+days.](docs/graph-snow.jpg)
 
 **Buttons**
 
 | Button | Location | Action |
 |--------|----------|--------|
-| **BOOT** (GPIO0) | bottom-left | Cycle backlight brightness in 10% steps (wraps 100% → 10%). A pop-up shows the level for 2s. |
+| **BOOT** (GPIO0) | bottom-left | Cycle backlight brightness in 10% steps (wraps 100% → 10%). A pop-up shows the level for 2 s, and the chosen level is remembered across reboots. |
 | **KEY** (GPIO14) | bottom-right | Cycle the page: Clock → Temperature → Pressure → Wind → Rain → Snow → Clock. |
+
+![The brightness pop-up: a "60%" overlay with a progress bar, shown briefly over
+the clock while the BOOT button steps the backlight.](docs/brightness.jpg)
 
 ---
 

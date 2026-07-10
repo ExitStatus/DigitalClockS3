@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include <TFT_eSPI.h>
+#include <Preferences.h>
 
 #include "Config.h"
 #include "Font.h"
@@ -37,20 +38,44 @@ static const int kBacklightChannel = 0;
 static const int kBacklightBits    = 8;
 
 // Backlight brightness, in 10% steps (10..100), cycled by the bottom-left button.
+// The chosen level is kept in NVS so the device comes back at the same brightness
+// after a power cycle rather than resetting to this default.
 static int backlightPercent = 50;
+
+static Preferences displayPrefs;
+static const char* kDisplayNamespace = "display";
+static const char* kBacklightKey     = "backlight";
 
 static void applyBacklight()
 {
     ledcWrite(kBacklightChannel, backlightPercent * 255 / 100);   // 0..255 duty
 }
 
-// One step brighter; after 100% wrap back around to 10%.
+// Restore the saved brightness, or keep the default if none is stored. Values are
+// snapped back onto the 10..100 step ladder in case NVS holds something unexpected.
+static void loadBacklight()
+{
+    displayPrefs.begin(kDisplayNamespace, false);   // read/write, kept open for saves
+
+    int saved = displayPrefs.getUChar(kBacklightKey, (uint8_t)backlightPercent);
+    saved -= saved % 10;                 // snap to a 10% step
+    if (saved < 10)  saved = 10;
+    if (saved > 100) saved = 100;
+    backlightPercent = saved;
+
+    DPRINTF("Backlight restored to %d%%\n", backlightPercent);
+}
+
+// One step brighter; after 100% wrap back around to 10%. The new level is saved so
+// it survives a reboot. putUChar only touches flash when the value actually
+// changes, so cycling back to a previous level costs no write.
 static void cycleBacklight()
 {
     backlightPercent += 10;
     if (backlightPercent > 100)
         backlightPercent = 10;
     applyBacklight();
+    displayPrefs.putUChar(kBacklightKey, (uint8_t)backlightPercent);
 }
 
 TFT_eSPI    tft   = TFT_eSPI();
@@ -174,7 +199,8 @@ static void initBacklight()
     pinMode(PIN_LCD_BL, OUTPUT);
     ledcSetup(kBacklightChannel, kBacklightFreq, kBacklightBits);
     ledcAttachPin(PIN_LCD_BL, kBacklightChannel);
-    applyBacklight();            // start at the default brightness step
+    loadBacklight();             // restore the brightness saved last session
+    applyBacklight();            // then light the panel at that level
 }
 
 static void initSerialForDebug()
