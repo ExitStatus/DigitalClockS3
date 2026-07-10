@@ -74,6 +74,12 @@ class WeatherApi
         void Begin();                  // starts the worker task
         void Update(bool wifiConnected);   // non-blocking: collect, then maybe dispatch
 
+        // Serialises this object's TLS sessions against other users of the same
+        // lock. A live WiFiClientSecure costs tens of KB of heap, so only one may
+        // exist at a time; the lock is what guarantees that. Optional: unset, the
+        // fetches run exactly as they did before.
+        void SetNetworkLock(SemaphoreHandle_t lock) { _netLock = lock; }
+
         // False while there has never been a successful fetch, or once the last
         // successful fetch is older than the staleness window (so stale data is
         // not displayed). Becomes true again as soon as a fresh fetch succeeds.
@@ -191,6 +197,11 @@ class WeatherApi
 
         Interval _weatherRefresh;   // 10 minutes
         Interval _forecastRefresh;  // 30 minutes
+
+        // Held by the worker for the length of a fetch, and never at the same time
+        // as _lock. Lock order is netLock first, then _lock, always released
+        // before the other is taken -- so no cycle exists to deadlock on.
+        SemaphoreHandle_t _netLock = nullptr;
 
         // ---- shared between the caller and the worker, guarded by _lock ------
         // Held only for the handover: a few words in dispatch(), a struct copy in

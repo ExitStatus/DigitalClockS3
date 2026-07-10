@@ -18,6 +18,11 @@
 #include "BrightnessOverlay.h"
 #include "WeatherGraphs.h"
 
+#if NEWS_ENABLED
+#include "NewsApi.h"
+#include "NewsTicker.h"
+#endif
+
 #include <OneButton.h>
 #include "Debug.h"
 
@@ -84,6 +89,21 @@ WeatherIcon    weatherIcon(&tft);
 WeatherPanel   weatherPanel(kStatusMargin);   // bottom-left; baseline passed at render
 ForecastPanel  forecastPanel(FORECAST_FADE_MS, FORECAST_HOLD_MS, kForecastStats);   // shares the bottom baseline
 WindPanel      windPanel;   // bottom-right, same baseline
+
+#if NEWS_ENABLED
+// Half the weather refresh interval (10 min), so the first headline fetch never
+// lands in the burst of weather traffic at boot. Only a stagger: the network
+// lock below is what actually guarantees one TLS session at a time.
+static const uint32_t kNewsFirstFetchMs = 300000;
+static const uint32_t kNewsOpenMs       = 400;   // clock shrink/grow duration
+
+NewsApi    news(NEWS_COUNTRY, NEWS_MAX_ITEMS, NEWS_INTERVAL_MS, kNewsFirstFetchMs);
+NewsTicker newsTicker(NEWS_DISPLAY_SPEED, kNewsOpenMs);
+
+// Shared by every worker that opens a TLS connection. A live WiFiClientSecure
+// costs tens of KB of heap and two at once would not fit.
+static SemaphoreHandle_t netLock = nullptr;
+#endif
 
 static const int kBottomMargin = 8;   // gap from the bottom edge to the weather baseline
 
@@ -184,15 +204,25 @@ static void drawStatusCluster()
 // The default page: live clock, date, weather, and status cluster.
 static void renderClockView()
 {
+    // The vertical room the digits may use. Normally the whole sprite; while a
+    // headline is on screen the ticker squeezes it to open a band underneath.
+#if NEWS_ENABLED
+    int clockTop    = newsTicker.ClockTop();
+    int clockBottom = newsTicker.ClockBottom();
+#else
+    int clockTop    = 0;
+    int clockBottom = frame.height();
+#endif
+
     struct tm now;
     if (ntp.GetTime(now))
     {
-        timePanel.Render(&frame, now);   // large live clock, centred
-        datePanel.Render(&frame, now);   // date, top-left
+        timePanel.Render(&frame, now, clockTop, clockBottom);   // large live clock
+        datePanel.Render(&frame, now);                          // date, top-left
     }
     else
     {
-        timePanel.RenderUnknown(&frame); // placeholder until the clock syncs
+        timePanel.RenderUnknown(&frame, clockTop, clockBottom); // placeholder until sync
     }
 
     // Bottom line: [icon][temperature] ... [rotating forecast] ... [wind].
@@ -210,6 +240,11 @@ static void renderClockView()
     forecastPanel.Render(&frame, weather, forecastLeft, forecastRight, baseline);
 
     drawStatusCluster();
+
+#if NEWS_ENABLED
+    if (newsTicker.BandVisible())
+        newsTicker.RenderBand(&frame);   // between the shrunken digits and the weather
+#endif
 }
 
 // Compose the current page offscreen, then blit it in one pass.
@@ -285,7 +320,17 @@ void setup()
 
     wifi.Begin();
     ntp.Begin();
+
+#if NEWS_ENABLED
+    netLock = xSemaphoreCreateMutex();
+    weather.SetNetworkLock(netLock);
+#endif
+
     weather.Begin();
+
+#if NEWS_ENABLED
+    news.Begin(netLock);
+#endif
 }
 
 void loop()
@@ -306,6 +351,11 @@ void loop()
 
     forecastPanel.Update();      // advance the rotating-stat fade state
 
+#if NEWS_ENABLED
+    news.Update(wifi.IsConnected());   // non-blocking; a worker task does the fetching
+    newsTicker.Update(news);           // shrink/scroll/grow state
+#endif
+
     // Current minute-of-day and second, or -1 while the clock has not synced yet.
     struct tm now;
     bool haveTime      = ntp.GetTime(now);
@@ -313,7 +363,18 @@ void loop()
     int  secondNow     = haveTime ? now.tm_sec : -1;
     bool minuteChanged = (minuteNow != lastRenderedMinute);
     bool stateChanged  = (wifi.State() != lastRenderedState);
-    bool fading        = (currentView() == View::Clock) && forecastPanel.Animating() && fastTick.Ready();
+
+    // The forecast fade and the news ticker both want ~20 fps. fastTick.Ready()
+    // is consuming -- a true return restarts its window -- so it must be read
+    // exactly once, or whichever animation tested it second would be starved of
+    // half its frames.
+    bool clockAnimating = (currentView() == View::Clock)
+                       && (forecastPanel.Animating()
+#if NEWS_ENABLED
+                           || newsTicker.Animating()
+#endif
+                          );
+    bool animTick = clockAnimating && fastTick.Ready();
 
     // A blinking colon is the only sub-minute change on the clock page, so it
     // needs its own repaint each second. CLOCK_BLINK_COLON is a compile-time
@@ -330,9 +391,9 @@ void loop()
 
     // The clock only changes once a minute, so repaint on the minute rollover
     // and on WiFi state changes; also once a second while the colon blinks, at
-    // ~20 fps while the forecast fades, and whenever the page or brightness HUD
-    // changes.
-    if (minuteChanged || stateChanged || fading || overlayChanged || viewChanged || blinkTick)
+    // ~20 fps while the forecast fades or a headline scrolls, and whenever the
+    // page or brightness HUD changes.
+    if (minuteChanged || stateChanged || animTick || overlayChanged || viewChanged || blinkTick)
     {
         renderFrame();
         lastRenderedMinute = minuteNow;
