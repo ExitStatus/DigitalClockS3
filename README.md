@@ -2,12 +2,17 @@
 
 A WiFi-connected digital clock and weather station for the **LilyGo T-Display-S3**
 (ESP32-S3 with a 170×320 ST7789 colour display). It shows a live clock that stays
-accurate over NTP, and a set of two-day weather-forecast graphs you can page
-through with the on-board buttons.
+accurate over NTP, scrolling news headlines, and a set of two-day
+weather-forecast graphs you can page through with the on-board buttons.
 
 Everything is rendered into a single off-screen buffer and blitted in one pass,
-so the display is flicker-free. Fonts are embedded into the firmware, so there's
-no filesystem to prepare.
+so the display is flicker-free. Fonts and icons are embedded into the firmware,
+so there's no filesystem to prepare.
+
+Weather and news are fetched on background worker tasks, so a slow or failing API
+never stalls the clock — the colon keeps blinking and the signal bars stay live
+through a fetch. A download arrow appears beside the signal bars while anything
+is in flight.
 
 ---
 
@@ -18,9 +23,13 @@ no filesystem to prepare.
 - Large seven-segment `HH:MM` with an `AM`/`PM` superscript and a colon that
   blinks once a second.
 - Date (top-left), WiFi signal-strength bars (top-right). The bars become a red
-  X whenever the link is down, so an outage is distinct from a weak signal.
+  X whenever the link is down, so an outage is distinct from a weak signal. A
+  download arrow sits to their left while data is being fetched.
 - Weather strip along the bottom: condition icon + temperature, a rotating
   forecast stat that fades in and out, and a wind arrow + speed.
+- News headlines. When there are unread ones the clock digits shrink to open a
+  band beneath them, each headline scrolls through it, and the digits grow back
+  when the queue empties. The weather strip is never disturbed.
 - Time is synced from NTP once an hour and free-runs from the internal clock in
   between. The display repaints each second to blink the colon, or once a minute
   if `blink_colon` is off.
@@ -63,18 +72,24 @@ weather API key, and location (see **Configuration** below).
 There are two build environments:
 
 - **`RELEASE`** — optimised, no serial logging. Use this for normal operation.
-- **`DEBUG`** — adds `-D DEBUG`, verbose ESP32 core logging, and prints
-  diagnostics over the serial monitor (`pio device monitor`). Handy when
-  troubleshooting WiFi or the weather fetch.
+- **`DEBUG`** — adds `-D DEBUG` and prints diagnostics over the serial monitor
+  (`pio device monitor`). Handy when troubleshooting WiFi, the weather fetch, or
+  the news parser.
+
+  Core logging is capped at `CORE_DEBUG_LEVEL=3` (INFO) deliberately. At level 4
+  and above `HTTPClient` logs every request URL, and the WeatherAPI key is a query
+  parameter of that URL — so raising it prints your API key in clear text on the
+  serial console and into any captured log.
 
 ---
 
 ## Configuration
 
 Settings are compile-time `build_flags`. The **secret / personal** ones (WiFi
-credentials, API key, location) live in a separate `secrets.ini` that is **not**
-committed to git; `platformio.ini` (which *is* committed) references them with
-`${secrets.*}`. The remaining, non-sensitive flags stay in `platformio.ini`.
+credentials, API key, location) live in `secrets.ini`, which is **not** committed
+to git. The **non-sensitive** ones live in `settings.ini`, which is. `platformio.ini`
+pulls both in through `extra_configs` and references their values as
+`${secrets.*}` and `${settings.*}`.
 
 ### Secrets (`secrets.ini`)
 
@@ -146,6 +161,12 @@ forecast_stat_rain     = on        ; on | off
 forecast_stat_wind     = on        ; on | off
 forecast_fade_ms   = 1000
 forecast_hold_ms   = 8000
+
+news                  = on         ; on | off
+news_country          = GB         ; ISO 3166-1 alpha-2
+news_interval_minutes = 30
+news_display_speed    = 60         ; pixels per second
+news_max_items        = 5
 ```
 
 #### Clock
@@ -205,6 +226,30 @@ temperature and wind alone.
 fade in/out duration and `hold` is how long each stat stays fully visible, both
 in milliseconds.
 
+#### News headlines
+
+Headlines come from Google News' RSS feed for one country. Only titles and
+publication dates are read. The publication date of the last headline shown is
+kept in NVS, so a reboot does not replay news you have already seen.
+
+- **`news`** — `on` or `off`. Off compiles the whole feature out; the clock page
+  is then exactly as it was before.
+- **`news_country`** — an ISO 3166-1 alpha-2 country code (`GB`, `US`, `AU`, `IE`).
+  The feed is always requested in English, so a country that publishes no English
+  edition will give thin results.
+- **`news_interval_minutes`** — how often to check for new headlines. The *first*
+  check is deliberately held back to five minutes after boot, so the clock and
+  weather have the network and the screen to themselves on a cold start.
+- **`news_display_speed`** — the ticker's scroll speed, in pixels per second. This
+  sets the reading pace, not the time on screen: a long headline simply takes
+  longer to cross. At `60` a typical headline is visible for around 14 seconds.
+- **`news_max_items`** — how many unseen headlines to show per check. This also
+  caps the very first run, where every item in the feed is unseen and would
+  otherwise queue up for a quarter of an hour.
+
+Google appends the publisher to every title (`... - BBC News`); that suffix is
+stripped before display.
+
 ### Display setup (do not change)
 
 The block of `-DTFT_*`, `-DST7789_DRIVER`, `-DLOAD_*`, etc. flags is the
@@ -242,26 +287,33 @@ meridian.
 ## Project layout
 
 ```
-platformio.ini      Board, build flags, library deps, embedded fonts (committed)
+platformio.ini      Board, build flags, library deps, embedded fonts/images (committed)
 settings.ini        User-tunable settings (committed)
 secrets.ini         Your WiFi/API key/location (gitignored; copy from the example)
 secrets.ini.example Template for secrets.ini
 include/            Shared headers (Config.h, Debug.h, Font.h)
-fonts/              Embedded .vlw fonts (Arial, Gill Sans)
+fonts/              Embedded .vlw smooth fonts (Cabin; see fonts/README.md)
+images/             Embedded .png icons (see ATTRIBUTION.md)
 lib/
   WifiManager/      Non-blocking WiFi station manager with reconnect/escalation
   NtpClient/        SNTP time sync (hourly) with local free-running clock
-  WeatherApi/       WeatherAPI current + 2-day hourly forecast fetch
+  WeatherApi/       WeatherAPI current + 2-day hourly forecast, on a worker task
+  NewsApi/          Google News RSS, streamed and parsed incrementally, on a worker task
+  Icon/             PNG decode, transparent-border crop, scale, alpha-blended draw
   SevenSegment/     Seven-segment digit renderer
   Interval/         millis()-based interval timer
 src/
   main.cpp          Setup, render loop, buttons, page cycle
   TimePanel / DatePanel / SignalBars / WeatherPanel / ForecastPanel /
   WindPanel / WeatherIcon     Clock-page panels
+  NewsTicker.*      Shrinks the clock and scrolls a headline beneath it
   HourlyGraph.*     Reusable 2-day hourly line-graph module
   WeatherGraphs.*   Builds each forecast graph page on HourlyGraph
   BrightnessOverlay.*  The brightness pop-up
 ```
+
+Both API clients share a mutex around their TLS sessions. A live
+`WiFiClientSecure` costs tens of KB of heap, and two at once would not fit.
 
 ---
 
@@ -272,10 +324,17 @@ Pulled in automatically by PlatformIO (`lib_deps`):
 - [TFT_eSPI](https://github.com/Bodmer/TFT_eSPI) — display driver
 - [OneButton](https://github.com/mathertel/OneButton) — button click handling
 - [PNGdec](https://github.com/bitbank2/PNGdec) — decodes the weather condition icon
+  and the embedded status icons
 - [ArduinoJson](https://arduinojson.org/) — parses the WeatherAPI responses
+
+The news feed is not JSON, and is far too large to hold in memory, so it is
+streamed straight through a small hand-written parser rather than a library.
 
 ---
 
 ## License
 
 Released under the [MIT License](LICENSE).
+
+Bundled icons and other third-party assets carry their own terms — see
+[ATTRIBUTION.md](ATTRIBUTION.md).

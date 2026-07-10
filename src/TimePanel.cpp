@@ -57,7 +57,7 @@ void TimePanel::draw(TFT_eSprite* s,
     int mainW  = 4 * Wm + 2 * kDigitGap + 2 * kColonGap + colonW;
 
     // The AM/PM superscript sits in a column to the right of HH:MM.
-    const uint8_t* ampmFont = (region < kCompactRegion) ? arial14 : arial18;
+    const uint8_t* ampmFont = (region < kCompactRegion) ? cabin26 : cabin28;
     int colW = 0;
     if (ampm)
     {

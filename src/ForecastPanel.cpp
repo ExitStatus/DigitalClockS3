@@ -92,7 +92,7 @@ void ForecastPanel::Render(TFT_eSprite* sprite, const WeatherApi& weather,
 void ForecastPanel::drawStat(TFT_eSprite* sprite, int centerX, const char* label,
                              const String& value, const char* unit, bool degree, uint16_t colour)
 {
-    sprite->loadFont(gillsans18);
+    sprite->loadFont(cabin16);
     sprite->setTextColor(colour, TFT_BLACK);
 
     if (!degree)

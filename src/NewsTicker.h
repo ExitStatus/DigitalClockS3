@@ -51,7 +51,7 @@ class NewsTicker
         static const int kCompactTop    = 30;   // clear of the date and status row
         static const int kCompactBottom = 86;
         static const int kBandTop       = 92;
-        static const int kBandBaseline  = 121;  // gillsans24 ink then spans 97..127
+        static const int kBandBaseline  = 121;  // cabin21 ink then spans 97..127
 
         int      _speed;      // pixels per second
         uint32_t _openMs;

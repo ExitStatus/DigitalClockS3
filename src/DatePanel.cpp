@@ -11,7 +11,7 @@ void DatePanel::Render(TFT_eSprite* sprite, const struct tm& time)
     char buffer[32];
     strftime(buffer, sizeof(buffer), "%d %B, %Y", &time);   // e.g. "03 January, 2026"
 
-    sprite->loadFont(gillsans20);
+    sprite->loadFont(cabin17);
     sprite->setTextColor(TFT_WHITE, TFT_BLACK);
 
     // Vertically centre the glyph ink on _y. ML_DATUM centres the full

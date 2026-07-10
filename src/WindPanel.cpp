@@ -58,7 +58,7 @@ void WindPanel::drawArrow(TFT_eSprite* s, int cx, int cy, float bearingDeg, int 
 
 int WindPanel::Render(TFT_eSprite* sprite, int rightX, float windSpeed, int windDegree, int baselineY)
 {
-    sprite->loadFont(gillsans24);   // match the temperature font/size
+    sprite->loadFont(cabin21);   // match the temperature font/size
 
     char buffer[12];
     snprintf(buffer, sizeof(buffer), "%d " WIND_UNIT_LABEL, (int)lroundf(windSpeed));
