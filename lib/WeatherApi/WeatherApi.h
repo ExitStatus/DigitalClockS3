@@ -30,7 +30,8 @@ struct WeatherFields
 // values are in the units named by the WeatherFields the API was built with.
 struct DayForecast
 {
-    bool    valid = false;
+    bool     valid = false;
+    uint32_t dateEpoch = 0;      // the day this forecast is for (WeatherAPI date_epoch)
     int8_t  maxTemp = 0;         // max hourly temperature (rounded)
     uint8_t maxRain = 0;         // max hourly chance_of_rain (%)
     uint8_t maxWind = 0;         // max hourly wind speed (rounded)
@@ -102,9 +103,12 @@ class WeatherApi
         size_t         IconLength() const  { return _iconLen; }
         uint32_t       IconVersion() const { return _iconVersion; }
 
-        // Forecast stats (computed from the stored hourly data). Hidden when
-        // stale, resumed when a fresh forecast is fetched.
-        bool HasForecast() const         { return _today.valid && _tomorrow.valid && (millis() - _lastForecastSuccess) < kForecastStaleMs; }
+        // Forecast stats (computed from the stored hourly data). A forecast is
+        // kept across failed fetches for as long as it is still for the current
+        // day: once the date rolls over without a fresh fetch, "today's" forecast
+        // has become yesterday's and is dropped. See the definition for the
+        // clock-not-set fallback.
+        bool HasForecast() const;
         int  MaxTempToday() const        { return _today.maxTemp; }
         int  MaxTempTomorrow() const     { return _tomorrow.maxTemp; }
         int  RainChanceToday() const     { return _today.maxRain; }
@@ -165,7 +169,11 @@ class WeatherApi
         static const uint32_t kFetchRetryMs    = 30000;    // short wait between failed attempts
         static const uint8_t  kMaxRetries      = 3;        // short retries before resuming normal interval
         static const uint32_t kWeatherStaleMs  = 1800000;  // 30 min: hide current weather if older
-        static const uint32_t kForecastStaleMs = 5400000;  // 90 min: hide forecast if older
+
+        // System-clock epoch below which the clock is treated as "not yet set",
+        // so the forecast's date cannot be judged. 2023-11-14 -- after any real
+        // build, before any real reading. Matches NtpClient's own threshold.
+        static const time_t kClockSetEpoch = 1700000000;
 
         // Worker task. The stack has to carry a TLS handshake (mbedTLS is
         // stack-hungry) and there is no PSRAM, so this comes out of internal
@@ -190,7 +198,6 @@ class WeatherApi
         uint8_t  _weatherRetries = 0;
         uint32_t _lastWeatherSuccess = 0;    // millis() of the last good weather fetch
         uint8_t  _forecastRetries = 0;
-        uint32_t _lastForecastSuccess = 0;   // millis() of the last good forecast fetch
 
         uint8_t* _iconPng = nullptr;   // heap buffer holding the icon PNG
         size_t   _iconLen = 0;

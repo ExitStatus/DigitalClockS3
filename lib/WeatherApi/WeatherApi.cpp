@@ -5,6 +5,7 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <math.h>
+#include <time.h>
 
 namespace
 {
@@ -188,7 +189,34 @@ void WeatherApi::applyForecast(const ForecastResult& r)
     _today = r.today;
     _tomorrow = r.tomorrow;
     _forecastRetries = 0;
-    _lastForecastSuccess = millis();
+}
+
+// A forecast is shown while it is still for the current local day. On a failed
+// fetch the stored _today/_tomorrow are left untouched (see applyForecast), so
+// this keeps yesterday's-fetched-but-still-for-today data on screen; once the
+// date rolls over without a fresh fetch, today's forecast has become yesterday's
+// and is dropped.
+bool WeatherApi::HasForecast() const
+{
+    if (!_today.valid || !_tomorrow.valid)
+        return false;
+
+    // No date to judge by -- the clock is not set yet, or the API omitted the
+    // date. Show what we have rather than hide data we cannot prove is stale.
+    time_t now = time(nullptr);
+    if (_today.dateEpoch == 0 || now < kClockSetEpoch)
+        return true;
+
+    // WeatherAPI's date_epoch is UTC midnight of the forecast date, so gmtime_r
+    // recovers that calendar date directly; the current moment is compared in
+    // local time. Mixing the two this way makes the rollover happen at local
+    // midnight regardless of the device's timezone -- localtime_r on both would
+    // shift the forecast's day by one for any location west of UTC.
+    struct tm nowTm, fcTm;
+    time_t fc = (time_t)_today.dateEpoch;
+    localtime_r(&now, &nowTm);
+    gmtime_r(&fc, &fcTm);
+    return nowTm.tm_year == fcTm.tm_year && nowTm.tm_yday == fcTm.tm_yday;
 }
 
 // Worker thread. Sleeps until asked, then does the blocking HTTP work and parks
@@ -388,6 +416,7 @@ bool WeatherApi::fetchForecast(ForecastResult& out)
     http.end();
 
     StaticJsonDocument<640> filter;
+    filter["forecast"]["forecastday"][0]["date_epoch"] = true;   // which day each block is for
     filter["forecast"]["forecastday"][0]["hour"][0][_fields.hourlyTemp] = true;
     filter["forecast"]["forecastday"][0]["hour"][0]["chance_of_rain"] = true;
     filter["forecast"]["forecastday"][0]["hour"][0]["chance_of_snow"] = true;
@@ -411,10 +440,20 @@ bool WeatherApi::fetchForecast(ForecastResult& out)
 
     parseDay(days[0]["hour"], out.today, _fields);
     parseDay(days[1]["hour"], out.tomorrow, _fields);
+    out.today.dateEpoch    = days[0]["date_epoch"] | 0u;
+    out.tomorrow.dateEpoch = days[1]["date_epoch"] | 0u;
 
     DPRINTF("WeatherApi: forecast today %d/%d%%/%d  tomorrow %d/%d%%/%d\n",
             out.today.maxTemp, out.today.maxRain, out.today.maxWind,
             out.tomorrow.maxTemp, out.tomorrow.maxRain, out.tomorrow.maxWind);
+#ifdef DEBUG
+    {
+        time_t d = (time_t)out.today.dateEpoch;
+        struct tm t; gmtime_r(&d, &t);   // date_epoch is UTC midnight of the forecast date
+        char buf[16]; strftime(buf, sizeof(buf), "%Y-%m-%d", &t);
+        DPRINTF("WeatherApi: forecast is for %s (epoch %u)\n", buf, (unsigned)out.today.dateEpoch);
+    }
+#endif
     return out.today.valid && out.tomorrow.valid;
 }
 
