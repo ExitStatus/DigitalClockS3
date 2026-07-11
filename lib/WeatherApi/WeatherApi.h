@@ -81,11 +81,13 @@ class WeatherApi
         // fetches run exactly as they did before.
         void SetNetworkLock(SemaphoreHandle_t lock) { _netLock = lock; }
 
-        // True while the worker has a fetch in flight, including the time spent
-        // waiting for the network lock. A plain bool rather than a locked read:
-        // it is one aligned word, written by the worker and read by the loop
-        // thread, and a value one frame stale costs nothing here.
-        bool Busy() const { return _fetching; }
+        // True while a fetch is in flight OR a failed fetch is waiting to retry,
+        // so the download indicator stays lit through a whole retry cycle rather
+        // than only blinking on during the ~1 s the worker is actually fetching.
+        // _fetching is written by the worker (a single aligned word; a value one
+        // frame stale costs nothing); the retry counters are caller-thread, read
+        // here on the caller thread.
+        bool Busy() const { return _fetching || _weatherRetries > 0 || _forecastRetries > 0; }
 
         // False while there has never been a successful fetch, or once the last
         // successful fetch is older than the staleness window (so stale data is
@@ -165,9 +167,13 @@ class WeatherApi
         bool fetchForecast(ForecastResult& out);
         bool downloadIcon(const String& url, uint8_t*& buf, size_t& len);
 
-        // Retry/staleness tuning
-        static const uint32_t kFetchRetryMs    = 30000;    // short wait between failed attempts
-        static const uint8_t  kMaxRetries      = 3;        // short retries before resuming normal interval
+        // Retry/staleness tuning.
+        // On a failed fetch, retry every 10 s up to 15 times before giving up and
+        // waiting for the normal interval. The forecast reads back empty for the
+        // first several seconds after a cold boot, so it needs to retry quickly
+        // and persistently to recover soon after that window clears.
+        static const uint32_t kFetchRetryMs    = 10000;    // wait between failed attempts
+        static const uint8_t  kMaxRetries      = 15;       // retries before resuming normal interval
         static const uint32_t kWeatherStaleMs  = 1800000;  // 30 min: hide current weather if older
 
         // System-clock epoch below which the clock is treated as "not yet set",
