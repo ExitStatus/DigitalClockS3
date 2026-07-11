@@ -104,6 +104,20 @@ the clock while the BOOT button steps the backlight.](docs/brightness.jpg)
 
 ---
 
+## Case and stand
+
+The enclosure and tilting stand shown in these photos are my own design, published
+on MakerWorld so you can print your own:
+
+**[LilyGo T-Display-S3 Case and Stand](https://makerworld.com/en/models/599914-lilygo-t-display-s3-case-and-stand#profileId-522013)**
+
+![The clock in the printed case on its tilting stand.](docs/clock.jpg)
+
+Print it, drop the board in, and the two side cut-outs line up with the BOOT and
+KEY buttons.
+
+---
+
 ## Building & flashing
 
 This is a [PlatformIO](https://platformio.org/) project. With PlatformIO
@@ -395,3 +409,13 @@ Released under the [MIT License](LICENSE).
 
 Bundled icons and other third-party assets carry their own terms — see
 [ATTRIBUTION.md](ATTRIBUTION.md).
+
+---
+
+## TODO
+
+- **Automatic brightness from ambient light.** Wire up a light-dependent resistor
+  (LDR) as a divider into a spare ADC pin, read the ambient level, and drive the
+  backlight from it — dimming in a dark room and brightening in daylight — instead
+  of the fixed, button-set level. Would fold into the existing `applyBacklight()`
+  path, likely with smoothing so it eases between levels rather than flickering.
