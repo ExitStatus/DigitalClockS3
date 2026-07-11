@@ -410,8 +410,14 @@ bool WeatherApi::fetchForecast(ForecastResult& out)
     }
 
     // getString() decodes chunked transfer encoding (the raw stream would carry
-    // chunk markers that break JSON parsing). The body is large (~50 KB) but a
-    // filter keeps only the hourly temp/rain fields, so the parsed doc stays tiny.
+    // chunk markers that break JSON parsing). The body is large (~40 KB) but a
+    // filter keeps only the hourly fields, so the parsed doc stays tiny.
+    //
+    // On a cold boot this occasionally returns an empty body (HTTP 200, 0 bytes)
+    // for the first several seconds -- not a memory problem (heap is plentiful),
+    // just a transient read hiccup that clears on its own. An empty body fails
+    // the parse below and is left to the retry (see applyForecast), which is why
+    // the forecast retries quickly and persistently.
     String payload = http.getString();
     http.end();
 
