@@ -82,6 +82,13 @@
 #error "settings.ini: graph_snow must be 'on' or 'off'"
 #endif
 
+#if GRAPH_TIMEOUT_SECONDS < 0 || GRAPH_TIMEOUT_SECONDS > 3600
+#error "settings.ini: graph_timeout_seconds must be 0..3600 (0 disables)"
+#endif
+
+// Milliseconds on a graph page before it returns to the clock; 0 disables it.
+#define GRAPH_TIMEOUT_MS (GRAPH_TIMEOUT_SECONDS * 1000UL)
+
 #if !ENABLED(FORECAST_STAT_MAX_TEMP) && FORECAST_STAT_MAX_TEMP != SW_off
 #error "settings.ini: forecast_stat_max_temp must be 'on' or 'off'"
 #endif
