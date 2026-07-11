@@ -169,6 +169,9 @@ static const int kPageCount = sizeof(kPages) / sizeof(kPages[0]);
 static int  pageIndex = 0;
 static View currentView() { return kPages[pageIndex]; }
 
+// millis() when the current graph page was entered, for the auto-return timeout.
+static uint32_t pageEnteredAt = 0;
+
 Interval fastTick(50);   // ~20 fps redraw while the forecast text is fading
 
 static uint32_t loadedIconVersion = 0;
@@ -351,6 +354,7 @@ static void onButton1Click()
 static void onButton2Click()
 {
     pageIndex = (pageIndex + 1) % kPageCount;
+    pageEnteredAt = millis();   // restart the graph auto-return countdown
     DPRINTF("View -> %d\n", (int)currentView());
 }
 
@@ -394,6 +398,18 @@ void loop()
 {
     button1.tick();              // poll the buttons (non-blocking, millis-debounced)
     button2.tick();
+
+#if GRAPH_TIMEOUT_MS > 0
+    // Leave a graph page to its own devices for only so long, then fall back to
+    // the clock. The button handler restarts the countdown on every page change,
+    // so this fires only after the page has sat untouched. The change of page is
+    // picked up by the repaint gate below (viewChanged).
+    if (currentView() != View::Clock && (millis() - pageEnteredAt) >= GRAPH_TIMEOUT_MS)
+    {
+        pageIndex = 0;
+        DPRINTLN("View -> 0 (graph timeout)");
+    }
+#endif
 
     wifi.Update();               // non-blocking; keeps the link up
     ntp.Update(wifi.IsConnected());

@@ -48,6 +48,10 @@ dated header over each day. Every graph auto-scales its axis to the data in view
 so a flat day and a stormy one both fill the height. A graph turned off in
 `settings.ini` is compiled out and skipped in the cycle.
 
+A graph page returns to the clock on its own after `graph_timeout_seconds`
+(default 30) so the display doesn't sit on a graph indefinitely; each press of the
+KEY button restarts the countdown, and setting it to `0` disables the auto-return.
+
 ### Predicted Temperature
 
 The apparent ("feels like") temperature hour by hour, in °C or °F. The line is
@@ -93,7 +97,7 @@ days.](docs/graph-snow.jpg)
 | Button | Location | Action |
 |--------|----------|--------|
 | **BOOT** (GPIO0) | bottom-left | Cycle backlight brightness in 10% steps (wraps 100% → 10%). A pop-up shows the level for 2 s, and the chosen level is remembered across reboots. |
-| **KEY** (GPIO14) | bottom-right | Cycle the page: Clock → Temperature → Pressure → Wind → Rain → Snow → Clock. |
+| **KEY** (GPIO14) | bottom-right | Cycle the page: Clock → Temperature → Pressure → Wind → Rain → Snow → Clock. A graph returns to the clock on its own after `graph_timeout_seconds`. |
 
 ![The brightness pop-up: a "60%" overlay with a progress bar, shown briefly over
 the clock while the BOOT button steps the backlight.](docs/brightness.jpg)
@@ -202,6 +206,7 @@ graph_pressure    = on             ; on | off
 graph_wind        = on             ; on | off
 graph_rain        = on             ; on | off
 graph_snow        = on             ; on | off
+graph_timeout_seconds = 30         ; seconds on a graph before returning to clock; 0 = off
 
 forecast_stat_max_temp = on        ; on | off
 forecast_stat_rain     = on        ; on | off
@@ -261,6 +266,11 @@ The clock is always the first page. Each graph switched on here joins the cycle
 that the bottom-right button steps through, in the order listed. A graph
 switched off is **compiled out entirely**, so turning one off skips its page and
 reclaims its flash rather than showing a blank screen.
+
+**`graph_timeout_seconds`** is how long a graph page stays up before returning to
+the clock on its own (default 30). Each KEY-button press restarts the countdown, so
+it fires only after the page has been left untouched. Set it to `0` to disable the
+auto-return and leave a graph up until the button is pressed again.
 
 #### Forecast stats
 
